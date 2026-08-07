@@ -622,11 +622,16 @@ write_rds(calibrated_data, here(base_dir,"hydro_vu_pull","back_calibration", "ca
 From here, we will review the back-calibrated data in Juan's ShinyApp
 
 ```{r}
-
 ## FUTURE WORK: 
 ## - Save year as global parameter in process .rmd so you do not need to change code within shinyapp to match year.
 ## - Save relative filepath for data and creds folder so each shinyapp doesn't need symlink.
 ## - Update shinyapp code to fix Y-axis label bug (Units not showing)
+
+# Set global options for shinyapp
+year <- "2022"
+cycle <- "2022_cycle"
+  
+# Run app
 shiny::shinyAppDir(
   appDir = here("calibration_correction_tool"),
   options = list(width = "100%", height = "100%")
@@ -790,64 +795,50 @@ These next functions apply flags to the data based on the following criteria:
 - Seasonal range violations
 
 ```{r}
-# Chunk the data for furrr
-summarized_data_chunks <- split(1:length(summarized_data),
-                                ceiling(seq_along(1:length(summarized_data))/10))
-# Flag data...
-# Single parameter flags
-single_sensor_flags <- list()
-for (chunk_idx in seq_along(summarized_data_chunks)) {
-  message("\n=== Processing chunk ", chunk_idx, " of ", length(summarized_data_chunks), " ===")
-  
-  # Get the indices for this chunk
-  indices <- summarized_data_chunks[[chunk_idx]]
-  chunk_data <- summarized_data[indices]
-  
-  # Process the chunk in parallel
-  chunk_results <- chunk_data %>%
-    future_map(
-      function(data) {
-        flagged_data <- data %>%
-          data.table(.) %>%
-          # flag field visits
-          add_field_flag(df = .) %>%
-          # flag missing data
-          add_na_flag(df = .) %>%
-          # flag DO noise
-          find_do_noise(df = .) %>%
-          # flag repeating values
-          add_repeat_flag(df = .) %>%
-          # find times when sonde was moved up/down in housing
-          add_depth_shift_flag(df = ., level_shift_table =  field_notes) %>%
-          # find instances of sensor drift (FDOM, Chl-a, Turbidity only)
-          add_drift_flag(df = .)
-        
-        if (unique(data$parameter) %in% names(sensor_thresholds)) {
-          # flag instances outside the spec range
-          flagged_data <- flagged_data %>%
-            add_spec_flag(df = ., spec_table = sensor_thresholds)
-        }
-        
-        if (unique(data$parameter) %in% unique(season_thresholds$parameter)) {
-          # flag instances outside the spec range
-          flagged_data <- flagged_data %>%
-            add_seasonal_flag(df = ., threshold_table = season_thresholds)
-        }
-        
-        return(flagged_data)
-      },
-      .progress = TRUE, .options = furrr_ops
-    )
-  
-  # Add chunk to list
-  single_sensor_flags <- c(single_sensor_flags, chunk_results)
-  
-  if (chunk_idx < length(summarized_data_chunks)) {
-    message("Taking a short break before next chunk...")
-    gc()
-    Sys.sleep(0.1)
-  }
-}
+# Create temporary directory for single-sensor intermediate files
+single_temp_dir <- here(flagged_temp_dir, "single_sensor")
+if (!dir.exists(single_temp_dir)) dir.create(single_temp_dir, recursive = TRUE)
+
+# Process and write directly to disk in parallel
+future_walk(
+  summarized_data,
+  function(data) {
+    flagged_data <- data %>%
+      data.table() %>%
+      # flag field visits
+      add_field_flag(df = .) %>%
+      # flag missing data
+      add_na_flag(df = .) %>%
+      # flag DO noise
+      find_do_noise(df = .) %>%
+      # flag repeating values
+      add_repeat_flag(df = .) %>%
+      # find times when sonde was moved up/down in housing
+      add_depth_shift_flag(df = ., level_shift_table = field_notes) %>%
+      # find instances of sensor drift (FDOM, Chl-a, Turbidity only)
+      add_drift_flag(df = .)
+    
+    param <- unique(data$parameter)
+    site_name <- unique(data$site)
+    
+    if (param %in% names(sensor_thresholds)) {
+      flagged_data <- add_spec_flag(flagged_data, spec_table = sensor_thresholds)
+    }
+    
+    if (param %in% unique(season_thresholds$parameter)) {
+      flagged_data <- add_seasonal_flag(flagged_data, threshold_table = season_thresholds)
+    }
+    
+    # Write to disk to avoid memory exhaustion
+    file_name <- paste0(site_name, "-", param, ".parquet")
+    write_parquet(flagged_data, file.path(single_temp_dir, file_name))
+  },
+  .progress = TRUE, .options = furrr_ops
+)
+
+# Free up summarized_data if no longer needed (optional but recommended)
+rm(summarized_data)
+gc()
 
 # beep to let you know when it's done
 beepr::beep(1)
@@ -864,60 +855,52 @@ The intra-sensor function will flag data based on the following criteria:
 To prevent overflagging, an inter-sensor check removes slope violation flags that occur concurrently with temp or depth violations.
 
 ```{r}
-intrasensor_flags <- single_sensor_flags %>%
-  rbindlist(fill = TRUE) %>%
-  split(by = "site")
+# Get the list of all single-sensor parquet files
+single_sensor_files <- list.files(single_temp_dir, pattern = "\\.parquet$", full.names = TRUE)
 
-# Chunk the data for furrr
-intrasensor_data_chunks <- split(1:length(intrasensor_flags),
-                                 ceiling(seq_along(1:length(intrasensor_flags))/3))
+# Group file paths by site
+sites <- sub("-.*", "", basename(single_sensor_files))
+site_grouped_files <- split(single_sensor_files, sites)
 
-intrasensor_flags_list <- list()
-for (chunk_idx in seq_along(intrasensor_data_chunks)) {
-  message("\n=== Processing chunk ", chunk_idx, " of ", length(intrasensor_data_chunks), " ===")
-  
-  # Get the indices for this chunk
-  indices <- intrasensor_data_chunks[[chunk_idx]]
-  chunk_data <- intrasensor_flags[indices]
-  # Process the chunk in parallel
-  chunk_results <- chunk_data %>%
-    future_map(
-      function(data) {
-        # A chunk is a site df
-        flagged_data <- data %>%
-          data.table() %>%
-          # flag times when water was below freezing
-          add_frozen_flag(.) %>%
-          # overflagging correction. remove slope violation flag if it occurs concurrently
-          # with temp or depth
-          intersensor_check(.) %>%
-          # add sonde burial. If DO is noise is long-term, likely burial:
-          add_burial_flag(.) %>%
-          # flag times when sonde was unsubmerged
-          add_unsubmerged_flag(.)
-        
-        return(flagged_data)
-      }, .progress = TRUE, .options = furrr_ops
-    ) %>%
-    rbindlist(fill = TRUE) %>%
-    # lil' cleanup of flag column contents
-    dplyr::mutate(flag = ifelse(flag == "", NA, flag)) %>%
-    distinct(site, parameter, DT_round, mean, .keep_all = TRUE) %>%
-    # transform back to site-parameter dfs
-    split(f = list(.$site, .$parameter), sep = "-") %>%
-    purrr::discard(~ nrow(.) == 0) %>%
-    # Add in KNOWN instances of sensor malfunction
-    map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes))
-  
-  # Add chunk to list
-  intrasensor_flags_list <- c(intrasensor_flags_list, chunk_results)
-  
-  if (chunk_idx < length(intrasensor_data_chunks)) {
-    message("Taking a short break before next chunk...")
-    gc()
-    Sys.sleep(0.1)
-  }
-}
+# Ensure final temp dir exists
+if (!dir.exists(here(flagged_temp_dir))) dir.create(here(flagged_temp_dir), recursive = TRUE)
+
+# Process intra-sensor flags out-of-core
+future_walk(
+  site_grouped_files,
+  function(file_paths) {
+    # Read all files for this specific site
+    site_data_list <- purrr::map(file_paths, read_parquet)
+    site_data <- rbindlist(site_data_list, fill = TRUE)
+    
+    # Perform intra-sensor flagging
+    flagged_data <- site_data %>%
+      # flag times when water was below freezing
+      add_frozen_flag(.) %>%
+      # overflagging correction. remove slope violation flag if it occurs concurrently
+      # with temp or depth
+      intersensor_check(.) %>%
+      # add sonde burial. If DO is noise is long-term, likely burial:
+      add_burial_flag(.) %>%
+      # flag times when sonde was unsubmerged
+      add_unsubmerged_flag(.)
+      
+    # Clean up flag column and get distinct records
+    flagged_data <- flagged_data %>%
+      dplyr::mutate(flag = ifelse(flag == "", NA, flag)) %>%
+      distinct(site, parameter, DT_round, mean, .keep_all = TRUE)
+      
+    # Split back into site-parameter lists
+    split_data <- flagged_data %>%
+      split(f = list(.$site, .$parameter), sep = "-") %>%
+      purrr::discard(~ nrow(.) == 0) %>%
+      # Add in KNOWN instances of sensor malfunction
+      purrr::map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes))
+      
+    # Write each parameter back to disk in the main temp dir
+    purrr::iwalk(split_data, ~write_parquet(.x, here(flagged_temp_dir, paste0(.y, ".parquet"))))
+  }, .progress = TRUE, .options = furrr_ops
+)
 
 # beep to let you know when it's done
 beepr::beep(1)
@@ -925,14 +908,11 @@ beepr::beep(1)
 
 Save the single-sensor/intra-sensor flagged data as a checkpoint.
 ```{r}
-# Save newest flagged datasets to temp dir
-iwalk(intrasensor_flags_list, ~write_parquet(.x, here(flagged_temp_dir, paste0(.y, ".parquet"))))
-
-# Load the flagged datasets back in from temp dir (if needed)
-intrasensor_flags_list <- list.files(here(flagged_temp_dir), pattern = "*.parquet", full.names = TRUE) %>%
-  map(~read_parquet(.x)) %>% 
-  set_names(list.files(here(flagged_temp_dir), pattern = "*.parquet", full.names = FALSE) %>%
-              str_remove(".parquet"))
+# Load the flagged datasets back in from temp dir for the network step
+intrasensor_flags_list <- list.files(here(flagged_temp_dir), pattern = "\\.parquet$", full.names = TRUE) %>%
+  purrr::map(~read_parquet(.x)) %>% 
+  set_names(list.files(here(flagged_temp_dir), pattern = "\\.parquet$", full.names = FALSE) %>%
+              stringr::str_remove("\\.parquet$"))
 ```
 
 ### 6.3) Network Flagging
@@ -1011,10 +991,9 @@ iwalk(final_flags, ~write_parquet(.x, here(flagged_dir, paste0(.y, ".parquet")))
 # We want to convert from UTC to MST for the manual verification process
 write_parquet(final_flags %>% bind_rows(), here(base_dir,"in_progress","raw_data","raw_data_2022.parquet"))
 
-# Load the flagged datasets back in from temp dir (if needed)
-final_flags_par <- read_parquet(here(base_dir,"in_progress","raw_data","raw_data_2022.parquet"))
-
-final_flags_par$DT_round <- with_tz(final_flags_par$DT_round, tzone = "US/Mountain")
+# # Load the flagged datasets back in from temp dir (if needed)
+# final_flags_par <- read_parquet(here(base_dir,"in_progress","raw_data","raw_data_2022.parquet"))
+# final_flags_par$DT_round <- with_tz(final_flags_par$DT_round, tzone = "US/Mountain")
 
 ```
 
@@ -1044,10 +1023,15 @@ invisible(lapply(c("shiny","bslib","DT","tidyverse","lubridate","here","ggpubr",
                    "keys","patchwork","digest","fs","shinyFiles","shinyWidgets","glue","anytime","arrow"),
                  package_loader)
           )
+
+# Set global options for ShinyApp to run for the year
+usgs_flow_dt_start = "2022-01-01"
+usgs_flow_dt_end = "2022-12-31"
 ```
 
 Run this codechunk to launch the manual verification tool. The app will open in a new window or tab in your default web browser.
 ```{r, echo=FALSE}
+
 shiny::shinyAppDir(
   appDir = here("manual_ver_tool"),
   options = list(width = "100%", height = "100%")
