@@ -36,9 +36,11 @@ invisible(
   })
 )
 
+# EDIT: Year and cycle values set in the Process_2022.rmd
+# This prevents the app from needing to be updated every year when new data is added
 ####---- SET YEAR -----###
-year = "2020"
-year_cycle = paste0( year, "_cycle")
+# year = "2022"
+# year_cycle = paste0( year, "_cycle")
 #### ----------------- ###
 
 in_progress_dir = here::here("data/raw/sensor/manual_data_verification", year_cycle, "in_progress")

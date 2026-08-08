@@ -26,7 +26,7 @@ options(shiny.autoload.r = TRUE)
 `%nin%` = Negate(`%in%`)
 
 #Source Helper files
-walk(list.files(here("manual_verification_tool", "R"), pattern = "\\.R$", full.names = TRUE), source)
+walk(list.files(here("manual_ver_tool", "R"), pattern = "\\.R$", full.names = TRUE), source)
 ##### Colors + parameters #####
 
 site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "pbr", "pman", "pbd","bellvue","salyer", "udall", "riverbend_virridy", "riverbend",
@@ -53,9 +53,10 @@ available_sites <- get_filenames()%>%mutate(
   unique()
 
 #TODO: Automate for public version or ask for user input
-available_flags <- read_csv(here("manual_verification_tool", "data", "meta", "available_flags.csv"), show_col_types = F)%>%
+available_flags <- read_csv(here("data", "raw", "sensor", "manual_data_verification", cycle, "in_progress", "meta", "available_flags.csv"), show_col_types = F)%>%
   pull(flags)%>%
   unique()
+
 
 #### USGS STREAMFLOW API QUERY
 cdwr_creds <- read_yaml(here("creds","creds","CDWRCreds.yml"))
@@ -68,8 +69,8 @@ global_usgs_flow_data <- tryCatch({
     # Fetch telemetry time series for the current station
     data <- get_telemetry_ts(
       abbrev = station,
-      start_date = "2020-01-01",
-      end_date = as.character(Sys.Date()),
+      start_date = usgs_flow_dt_start,
+      end_date = usgs_flow_dt_end,
       timescale = "raw",
       api_key = cdwr_creds$api_key
     )
