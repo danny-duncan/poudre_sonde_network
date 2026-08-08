@@ -35,13 +35,16 @@ invisible(
   })
 )
 
+# EDIT: Year and cycle values set in the Process_2022.rmd
+# This prevents the app from needing to be updated every year when new data is added
 # Load data once when app starts
 #### ---- UPDATE YEAR WHEN NEW DATA IS ADDED ---- ####
-year = "2023"
-cycle = paste0(year, "_cycle")
+# year = "2022"
+# cycle = paste0(year, "_cycle")
 #### -------------------------------------------- ####
 
 # Define file paths for tracking system
+# EDIT: Update the data_dir path to point to the data folder in the parent poudre_sonde_network dir.
 data_dir <- here::here("data", "raw", "sensor", "manual_data_verification", cycle,"hydro_vu_pull","back_calibration")
 tracking_file <- file.path(data_dir,"calibrated_sensor_field_data_tracking.rds")
 finalized_file <- file.path(data_dir, "calibrated_sensor_field_data_finalized.rds")
@@ -72,11 +75,11 @@ if (file.exists(finalized_file)) {
 }
 
 # Read in the sensor specific calibration data
-sensor_calibration_data <- readr::read_rds(here::here("data", "collated", "sensor", "cal_reports",
+sensor_calibration_data <- readr::read_rds(here::here("..","data", "collated", "sensor", "cal_reports",
                                                       "sensor_calibration_data.RDS"))
 
 ross.wq.tools::load_calibration_data(
-  cal_data_file_path = here::here("data", "collated", "sensor", "cal_reports",
+  cal_data_file_path = here::here("..", "data", "collated", "sensor", "cal_reports",
                                   "munged_calibration_data.RDS")
 )
 
@@ -103,7 +106,7 @@ field_notes_data <- ross.wq.tools::load_mWater()%>%
          type = str_split(col, paste0(parameter, "_"), simplify = T)[,2])%>%
   ross.wq.tools::fix_site_names()
 #add old field notes if year is 2023 or earlier
-if(year <= 2023){
+if(year <= 2022){
   old_field_notes <- readxl::read_excel(here("data","raw","field_notes","sensor_field_notes.xlsx")) %>%
     mutate(DT = (paste0(date, " ", start_time_mst))) %>%
     mutate(DT = ymd_hm(DT) + hours(7)) %>%
