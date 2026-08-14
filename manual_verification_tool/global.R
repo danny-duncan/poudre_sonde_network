@@ -18,7 +18,7 @@ library(shinyWidgets)
 library(glue)
 library(anytime)
 library(arrow)
-library(cdssr) # Devtools packge, code to install: 
+library(cdssr) # Devtools packge, code to install:
 # install.packages("devtools")
 #devtools::install_github("anguswg-ucsb/cdssr")
 
@@ -55,10 +55,38 @@ available_sites <- get_filenames()%>%mutate(
   unique()
 
 #TODO: Automate for public version or ask for user input
-available_flags <- read_csv(here("manual_verification_tool", "data", "meta", "available_flags.csv"), show_col_types = F)%>%
+available_flags <- read_csv(here("data", "raw", "sensor", "manual_data_verification", year_cycle, "in_progress", "meta", "available_flags.csv"), show_col_types = F)%>%
   pull(flags)%>%
   unique()
 
+#### USGS STREAMFLOW API QUERY
+cdwr_creds <- read_yaml(here("creds","creds","CDWRCreds.yml"))
+stations <- c("CLAFTCCO", "CLAFORCO", "CLABOXCO")
 
+global_usgs_flow_data <- tryCatch({
+
+  purrr::map_df(stations, function(station) {
+
+    # Fetch telemetry time series for the current station
+    data <- get_telemetry_ts(
+      abbrev = station,
+      start_date = usgs_flow_dt_start,
+      end_date = usgs_flow_dt_end,
+      timescale = "raw",
+      api_key = cdwr_creds$api_key
+    )
+
+    # Add abbreviation column to keep track of locations
+    if (!is.null(data) && nrow(data) > 0) {
+      data$station_abbrev <- station
+    }
+
+    return(data)
+  })
+
+}, error = function(e) {
+  warning("Failed to fetch global USGS flow data: ", e$message)
+  return(NULL) # Explicitly returns NULL to global_usgs_flow_data
+})
 
 ###### End Helper Functions ######
