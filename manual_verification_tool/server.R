@@ -63,16 +63,15 @@ server <- function(input, output, session) {
   all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots? (why is there a question mark here)
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
   selected_data_cur_filename <- reactiveVal(NULL) # Current filename of selected data, to be updated as filename is saved
-  usgs_yearly_data <- reactiveVal(NULL) # Cache for USGS flow data
-  usgs_current_year <- reactiveVal(NULL) # Track which year's data is cached
 
   auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
   # Check if data folder exists and if data/all_data subfolder has files, if files are available, show table of available files and allow user selection
   output$conditional_data_ui <- renderUI({
     # Check if data folder exists and if data/all_data subfolder has files
-    data_folder_exists <- dir.exists(here(data_path))
+    data_folder_exists <- dir.exists(in_progress_path)
     all_data_subfolder_exists <- dir.exists(all_data_path)
+    all_data_subfolder_empty <- FALSE
       if(!all_data_subfolder_exists | length(list.files(all_data_path)) == 0) {
         all_data_subfolder_empty <- TRUE
       }
@@ -382,6 +381,54 @@ server <- function(input, output, session) {
       current <- current_week()
       idx <- which(weeks == current)
     }
+  })
+
+  # Reactive to hold USGS flow data
+  usgs_flow_data <- reactive({
+    req(input$site, current_week(), isolate(selected_data()))
+
+    week_data <- isolate(selected_data()) %>% filter(week == current_week())
+    week_min_day <- min(week_data$DT_round, na.rm = TRUE)
+    week_max_day <- max(week_data$DT_round, na.rm = TRUE)
+
+    all_flow_sites <- input$site
+    flow_data_list <- purrr::map(all_flow_sites, function(site_name) {
+      abbrev_val <- case_when(
+        site_name %in% c("pbd", "bellvue", "pman", "pbr", "sfm", "pfal", "chd", "cbri", "joei") ~ "CLAFTCCO",
+        site_name %in% c("salyer", "udall", "riverbend", "riverbend_virridy") ~ "CLAFORCO",
+        site_name %in% c("cottonwood", "cottonwood_virridy", "elc", "archery", "archery_virridy", "boxcreek", "springcreek", "riverbluffs") ~ "CLABOXCO",
+        TRUE ~ NA_character_
+      )
+      if (is.na(abbrev_val)) return(NULL)
+
+      tryCatch({
+        s_date <- week_min_day - days(2)
+        e_date <- week_max_day + days(2)
+
+        if (!is.null(global_usgs_flow_data) && nrow(global_usgs_flow_data) > 0) {
+          # Use pre-fetched global data
+          data <- global_usgs_flow_data %>%
+            filter(abbrev == abbrev_val,
+                   datetime >= s_date,
+                   datetime <= e_date)
+        } else {
+          # Fallback if global data isn't available
+          data <- cdssr::get_telemetry_ts(abbrev = abbrev_val,
+                                          start_date = as.character(as.Date(s_date)),
+                                          end_date = as.character(as.Date(e_date)),
+                                          timescale = "raw")
+        }
+
+        if (nrow(data) > 0) {
+          data$site <- site_name
+          data$abbrev <- abbrev_val
+          return(data)
+        }
+        return(NULL)
+      }, error = function(e) NULL)
+    }) %>% purrr::compact()
+
+    if (length(flow_data_list) > 0) bind_rows(flow_data_list) else NULL
   })
 
   ## Main plot (main plot starts here)
@@ -998,72 +1045,9 @@ server <- function(input, output, session) {
     }
 
     # Create USGS Flow Plot
-    all_flow_sites <- input$site
+    flow_df <- usgs_flow_data()
     
-    flow_data_list <- map(all_flow_sites, function(site_name) {
-      abbrev <- case_when(
-        site_name %in% c("pbd", "bellvue", "pman", "pbr", "sfm", "pfal", "chd", "cbri", "joei") ~ "CLAFTCCO",
-        site_name %in% c("salyer", "udall", "riverbend", "riverbend_virridy") ~ "CLAFORCO",
-        site_name %in% c("cottonwood", "cottonwood_virridy", "elc", "archery", "archery_virridy", "boxcreek", "springcreek", "riverbluffs") ~ "CLABOXCO",
-        TRUE ~ NA_character_
-      )
-      if (is.na(abbrev)) return(NULL)
-      
-      current_year <- year(week_min_day)
-      
-      # Check if we need to fetch new yearly data
-      if (is.null(usgs_yearly_data()) || is.null(usgs_current_year()) || usgs_current_year() != current_year) {
-        showNotification("Fetching USGS flow data for the year...", id = "usgs_fetch")
-        
-        gauges <- c("CLAFTCCO", "CLAFORCO", "CLABOXCO")
-        start_date <- paste0(current_year, "-01-01")
-        end_date <- paste0(current_year, "-12-31")
-        
-        yearly_data_list <- map(gauges, function(abbrev_val) {
-          tryCatch({
-            data <- cdssr::get_telemetry_ts(abbrev = abbrev_val, 
-                                            start_date = start_date, 
-                                            end_date = end_date, 
-                                            timescale = "raw")
-            if (nrow(data) > 0) {
-              data$abbrev <- abbrev_val
-              return(data)
-            }
-            return(NULL)
-          }, error = function(e) NULL)
-        }) %>% compact()
-        
-        if (length(yearly_data_list) > 0) {
-          usgs_yearly_data(bind_rows(yearly_data_list))
-        } else {
-          usgs_yearly_data(tibble())
-        }
-        usgs_current_year(current_year)
-        removeNotification(id = "usgs_fetch")
-      }
-      
-      yearly_df <- usgs_yearly_data()
-      if (is.null(yearly_df) || nrow(yearly_df) == 0) return(NULL)
-      
-      s_date <- week_min_day - days(2)
-      e_date <- week_max_day + days(2)
-      
-      # Filter for this gauge and this time window
-      filtered_data <- yearly_df %>% 
-        filter(abbrev == !!abbrev,
-               datetime >= s_date,
-               datetime <= e_date)
-               
-      if (nrow(filtered_data) > 0) {
-        filtered_data$site <- site_name
-        return(filtered_data)
-      }
-      return(NULL)
-    }) %>% compact()
-
-    if (length(flow_data_list) > 0) {
-      flow_df <- bind_rows(flow_data_list)
-      
+    if (!is.null(flow_df)) {
       p_flow <- plot_ly()
       
       # Add main site flow
