@@ -156,11 +156,10 @@ ui <- page_navbar(
       layout_columns(
         col_widths = 12,
         # Sub plots card (top right)
-        card(
-          card_header(
-            h6("Additional Parameters")
-          ),
-          card_body(
+        navset_card_tab(
+          id = "additional_tabs",
+          title = h6("Additional Parameters", class = "m-0"),
+          nav_panel("Plots",
             # Sub parameter selection
             layout_columns(
               col_widths = c(6, 6),
@@ -174,12 +173,17 @@ ui <- page_navbar(
                              options = list(plugins = "remove_button"))
             ),
             div(
-              class = "flex-fill",
+              class = "flex-fill d-flex flex-column",
               style = "overflow-y: auto; min-height: 600px;",  # Make this div scrollable and fill remaining height
               plotlyOutput("sub_plots", width = "100%", height = "100%")
             )
-
-
+          ),
+          nav_panel("Field Notes",
+            div(
+              class = "flex-fill d-flex flex-column",
+              style = "overflow-y: auto; min-height: 600px;",
+              DT::dataTableOutput("field_notes_table")
+            )
           )
         )
       )

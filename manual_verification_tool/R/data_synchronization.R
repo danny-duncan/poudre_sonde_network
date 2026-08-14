@@ -1,9 +1,9 @@
 sync_file_system <- function(){
 
 
-  pre_dir_path <- here("manual_verification_tool",  "data", "pre_verification_directory")# pre_verification_path
-  int_dir_path <- here("manual_verification_tool",  "data", "intermediary_directory")# intermediary_path
-  ver_dir_path <- here("manual_verification_tool",  "data", "verified_directory")# verified_path
+  pre_dir_path <- pre_verification_path# pre_verification_path
+  int_dir_path <- intermediary_path# intermediary_path
+  ver_dir_path <- verified_path# verified_path
 
   pre_dir_names <- list.files(pre_dir_path)
   int_dir_names <- list.files(int_dir_path)
@@ -65,9 +65,9 @@ sync_file_system <- function(){
 # check pre verification directory (this is redundant, just double checking)
 check_pre_ver_dir <- function(pre_file_name) {
 
-  pre_dir_path <- here("manual_verification_tool",  "data", "pre_verification_directory")# pre_verification_path
-  int_dir_path <- here("manual_verification_tool",  "data", "intermediary_directory")# intermediary_path
-  ver_dir_path <- here("manual_verification_tool",  "data", "verified_directory")# verified_path
+  pre_dir_path <- pre_verification_path # pre_verification_path
+  int_dir_path <- intermediary_path # intermediary_path
+  ver_dir_path <- verified_path # verified_path
 
   pre_dir_names <- list.files(pre_dir_path)
   int_dir_names <- list.files(int_dir_path)
@@ -90,9 +90,9 @@ check_pre_ver_dir <- function(pre_file_name) {
 # Check intermediary verification directory
 check_int_ver_dir <- function(int_file_name) {
 
-  pre_dir_path <- here("manual_verification_tool",  "data", "pre_verification_directory")# pre_verification_path
-  int_dir_path <- here("manual_verification_tool",  "data", "intermediary_directory")# intermediary_path
-  ver_dir_path <- here("manual_verification_tool",  "data", "verified_directory")# verified_path
+  pre_dir_path <- pre_verification_path # pre_verification_path
+  int_dir_path <- intermediary_path # intermediary_path
+  ver_dir_path <- verified_path # verified_path
 
   pre_dir_names <- list.files(pre_dir_path)
   int_dir_names <- list.files(int_dir_path)
@@ -156,9 +156,9 @@ check_int_ver_dir <- function(int_file_name) {
 # Check final verified directory
 check_fin_ver_dir <- function(ver_file_name) {
 
-  pre_dir_path <- here("manual_verification_tool",  "data", "pre_verification_directory")# pre_verification_path
-  int_dir_path <- here("manual_verification_tool",  "data", "intermediary_directory")# intermediary_path
-  ver_dir_path <- here("manual_verification_tool",  "data", "verified_directory")# verified_path
+  pre_dir_path <- pre_verification_path # pre_verification_path
+  int_dir_path <- intermediary_path # intermediary_path
+  ver_dir_path <- verified_path # verified_path
 
   pre_dir_names <- list.files(pre_dir_path)
   int_dir_names <- list.files(int_dir_path)
@@ -282,9 +282,9 @@ fix_duplicate_files <- function(dataframe_with_duplicate_info, directory){
 # use a pre file and has made a weekly decision.
 move_file_to_intermediary_directory <- function(pre_to_int_filename, pre_to_int_df) {
 
-  pre_dir_path <- here("manual_verification_tool",  "data", "pre_verification_directory")# pre_verification_path
-  int_dir_path <- here("manual_verification_tool",  "data", "intermediary_directory")# intermediary_path
-  ver_dir_path <- here("manual_verification_tool",  "data", "verified_directory")# verified_path
+  pre_dir_path <- pre_verification_path # pre_verification_path
+  int_dir_path <- intermediary_path # intermediary_path
+  ver_dir_path <- verified_path # verified_path
 
   pre_dir_names <- list.files(pre_dir_path)
   int_dir_names <- list.files(int_dir_path)
@@ -343,9 +343,9 @@ move_file_to_intermediary_directory <- function(pre_to_int_filename, pre_to_int_
 # the file should be an parquet
 update_intermediary_data <- function(int_df_filename, updated_df) {
 
-   pre_dir_path <- here("manual_verification_tool",  "data", "pre_verification_directory")# pre_verification_path
-  int_dir_path <- here("manual_verification_tool",  "data", "intermediary_directory")# intermediary_path
-  ver_dir_path <- here("manual_verification_tool",  "data", "verified_directory")# verified_path
+   pre_dir_path <- pre_verification_path # pre_verification_path
+  int_dir_path <- intermediary_path # intermediary_path
+  ver_dir_path <- verified_path # verified_path
 
   pre_dir_names <- list.files(pre_dir_path)
   int_dir_names <- list.files(int_dir_path)
@@ -392,9 +392,9 @@ update_intermediary_data <- function(int_df_filename, updated_df) {
 # on an int file.
 move_file_to_verified_directory <- function(int_to_fin_filename, int_to_fin_df) {
 
-  pre_dir_path <- here("manual_verification_tool",  "data", "pre_verification_directory")# pre_verification_path
-  int_dir_path <- here("manual_verification_tool",  "data", "intermediary_directory")# intermediary_path
-  ver_dir_path <- here("manual_verification_tool",  "data", "verified_directory")# verified_path
+  pre_dir_path <- pre_verification_path # pre_verification_path
+  int_dir_path <- intermediary_path # intermediary_path
+  ver_dir_path <- verified_path # verified_path
 
   pre_dir_names <- list.files(pre_dir_path)
   int_dir_names <- list.files(int_dir_path)

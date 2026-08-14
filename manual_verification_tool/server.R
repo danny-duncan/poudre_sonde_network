@@ -71,16 +71,11 @@ server <- function(input, output, session) {
   # Check if data folder exists and if data/all_data subfolder has files, if files are available, show table of available files and allow user selection
   output$conditional_data_ui <- renderUI({
     # Check if data folder exists and if data/all_data subfolder has files
-    data_folder_exists <- dir.exists(here("manual_verification_tool",  "data"))
-    all_data_path <- here("manual_verification_tool",  "data", "all_data_directory")
-    all_data_subfolder_empty <- FALSE
-
-    if(data_folder_exists) {
-      all_data_subfolder_exists <- dir.exists(all_data_path)
+    data_folder_exists <- dir.exists(here(data_path))
+    all_data_subfolder_exists <- dir.exists(all_data_path)
       if(!all_data_subfolder_exists | length(list.files(all_data_path)) == 0) {
         all_data_subfolder_empty <- TRUE
       }
-    }
 
     if(!data_folder_exists|all_data_subfolder_empty){
       # Show file upload and timezone input if conditions are met
@@ -1168,6 +1163,33 @@ server <- function(input, output, session) {
       all_plot
     }
 
+  })
+
+  output$field_notes_table <- DT::renderDataTable({
+    req(current_week(), selected_data(), input$site)
+
+    week_data <- isolate(selected_data()) %>% filter(week == current_week())
+    week_min_day <- min(week_data$DT_round, na.rm = TRUE)
+    week_max_day <- max(week_data$DT_round, na.rm = TRUE)
+
+    # Use the existing meta folder path for this project
+    field_notes_path <- here(meta_path, "field_notes_21-22.parquet")
+
+
+    if (file.exists(field_notes_path)) {
+      notes <- arrow::read_parquet(field_notes_path)
+      
+      # Try filtering by DT_round if it exists, otherwise by date or datetime
+      if ("DT_round" %in% names(notes)) {
+        notes <- notes %>% filter(DT_round >= week_min_day & DT_round <= week_max_day, site == input$site)
+      } else if ("datetime" %in% names(notes)) {
+        notes <- notes %>% filter(datetime >= week_min_day & datetime <= week_max_day, site == input$site)
+      }
+      
+      DT::datatable(notes, options = list(pageLength = 10, scrollX = TRUE))
+    } else {
+      data.frame(Message = paste("Field notes file not found at", field_notes_path))
+    }
   })
 
   #### Brush Tools ####
