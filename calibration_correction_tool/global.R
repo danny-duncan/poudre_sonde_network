@@ -35,20 +35,12 @@ invisible(
   })
 )
 
-# EDIT: Year and cycle values set in the Process_2022.rmd
-# This prevents the app from needing to be updated every year when new data is added
-# Load data once when app starts
-#### ---- UPDATE YEAR WHEN NEW DATA IS ADDED ---- ####
-# year = "2022"
-# cycle = paste0(year, "_cycle")
-#### -------------------------------------------- ####
-
 # Define file paths for tracking system
 # EDIT: Update the data_dir path to point to the data folder in the parent poudre_sonde_network dir.
-data_dir <- here::here("data", "raw", "sensor", "manual_data_verification", cycle,"hydro_vu_pull","back_calibration")
+data_dir <- file.path(year_cycle_path, "hydro_vu_pull","back_calibration")
 tracking_file <- file.path(data_dir,"calibrated_sensor_field_data_tracking.rds")
 finalized_file <- file.path(data_dir, "calibrated_sensor_field_data_finalized.rds")
-original_file <- here::here(data_dir,paste0("calibrated_sensor_data_", year, ".rds"))
+original_file <- file.path(data_dir,paste0("calibrated_sensor_data_", year, ".rds"))
 
 # Initialize tracking data (unverified calibrations)
 if (file.exists(tracking_file)) {
@@ -75,11 +67,11 @@ if (file.exists(finalized_file)) {
 }
 
 # Read in the sensor specific calibration data
-sensor_calibration_data <- readr::read_rds(here::here("..","data", "collated", "sensor", "cal_reports",
+sensor_calibration_data <- readr::read_rds(here::here("data", "collated", "sensor", "cal_reports",
                                                       "sensor_calibration_data.RDS"))
 
 ross.wq.tools::load_calibration_data(
-  cal_data_file_path = here::here("..", "data", "collated", "sensor", "cal_reports",
+  cal_data_file_path = here::here("data", "collated", "sensor", "cal_reports",
                                   "munged_calibration_data.RDS")
 )
 
