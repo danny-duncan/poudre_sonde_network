@@ -409,23 +409,22 @@ server <- function(input, output, session) {
 
         if (!is.null(global_usgs_flow_data) && nrow(global_usgs_flow_data) > 0) {
           # Use pre-fetched global data
+          
+          # Safely determine the column name (station_abbrev or abbrev)
+          col_name <- if("station_abbrev" %in% names(global_usgs_flow_data)) "station_abbrev" else "abbrev"
+          
           data <- global_usgs_flow_data %>%
-            filter(abbrev == abbrev_val,
+            filter(!!sym(col_name) == abbrev_val,
                    datetime >= s_date,
                    datetime <= e_date)
-        } else {
-          # Fallback if global data isn't available
-          data <- cdssr::get_telemetry_ts(abbrev = abbrev_val,
-                                          start_date = as.character(as.Date(s_date)),
-                                          end_date = as.character(as.Date(e_date)),
-                                          timescale = "raw")
+                   
+          if (nrow(data) > 0) {
+            data$site <- site_name
+            data$abbrev <- abbrev_val
+            return(data)
+          }
         }
-
-        if (nrow(data) > 0) {
-          data$site <- site_name
-          data$abbrev <- abbrev_val
-          return(data)
-        }
+        
         return(NULL)
       }, error = function(e) NULL)
     }) %>% purrr::compact()
@@ -1223,43 +1222,13 @@ server <- function(input, output, session) {
   })
 
 
-  # Brush submit button UI
-  output$brush_submit_ui <- renderUI({
-    can_submit <- FALSE
+  # Helper function to apply brush actions
+  apply_brush_action <- function(action) {
+    req(brushed_areas(), selected_data())
 
-    #Can only click button if there is a brush selection and a decision has been made
-    if (!is.null(input$plot_brush) & !is.null(input$brush_action)) {
-
-      if(input$brush_action == "A"){
-        can_submit = TRUE
-      }else{
-        if(input$brush_action %in% c("F", "O")){
-          can_submit = FALSE
-          if(!is.null(input$user_brush_flags)){
-            can_submit = TRUE
-          }
-        }
-      }
-    }
-
-    actionButton(
-      "submit_brush",
-      "Submit",
-      class = ifelse(can_submit, "btn-success", "btn-secondary"),
-      disabled = !can_submit
-    )
-
-  })
-
-
-  # Modified submit observer
-  observeEvent(input$submit_brush, {
-    req(brushed_areas(), input$brush_action, selected_data())
-
-    user_brush_select <- input$brush_action
+    user_brush_select <- action
     # Initialize updated data with current data
     updated_data <- selected_data()
-
 
     #deal with empty brush areas
     if(is_empty(brushed_areas())){
@@ -1270,8 +1239,7 @@ server <- function(input, output, session) {
       brushed_areas(list())
       session$resetBrush("plot_brush")
       #reset input$user_brush_flags to nothing
-      updateRadioButtons(session, "user_brush_flags", selected = "")
-
+      updateSelectizeInput(session, "user_brush_flags", selected = "")
 
       showNotification("No Points Brushed, no changes applied", type = "message")
 
@@ -1327,10 +1295,30 @@ server <- function(input, output, session) {
       brushed_areas(list())
       session$resetBrush("plot_brush")
       #reset input$user_brush_flags to nothing
-      updateRadioButtons(session, "user_brush_flags", selected = "")
+      updateSelectizeInput(session, "user_brush_flags", selected = "")
 
       showNotification("Brush Changes saved.", type = "message")
     }
+  }
+
+  observeEvent(input$btn_accept_brush, {
+    apply_brush_action("A")
+  })
+
+  observeEvent(input$btn_flag_brush, {
+    if (is.null(input$user_brush_flags)) {
+      showNotification("Please select at least one flag.", type = "warning")
+      return()
+    }
+    apply_brush_action("F")
+  })
+
+  observeEvent(input$btn_omit_brush, {
+    if (is.null(input$user_brush_flags)) {
+      showNotification("Please select at least one flag.", type = "warning")
+      return()
+    }
+    apply_brush_action("O")
   })
 
 

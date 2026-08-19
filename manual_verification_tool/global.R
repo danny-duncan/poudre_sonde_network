@@ -71,20 +71,26 @@ global_usgs_flow_data <- tryCatch({
   purrr::map_df(stations, function(station) {
 
     # Fetch telemetry time series for the current station
-    data <- get_telemetry_ts(
-      abbrev = station,
-      start_date = usgs_flow_dt_start,
-      end_date = usgs_flow_dt_end,
-      timescale = "raw",
-      api_key = cdwr_creds$api_key
-    )
+    data <- tryCatch({
+      get_telemetry_ts(
+        abbrev = station,
+        start_date = usgs_flow_dt_start,
+        end_date = usgs_flow_dt_end,
+        timescale = "raw",
+        api_key = cdwr_creds$api_key
+      )
+    }, error = function(e) {
+      warning("Failed to fetch data for station: ", station, " - ", e$message)
+      return(NULL)
+    })
 
     # Add abbreviation column to keep track of locations
     if (!is.null(data) && nrow(data) > 0) {
       data$station_abbrev <- station
+      return(data)
     }
 
-    return(data)
+    return(NULL)
   })
 
 }, error = function(e) {
