@@ -98,7 +98,7 @@ field_notes_data <- ross.wq.tools::load_mWater()%>%
          type = str_split(col, paste0(parameter, "_"), simplify = T)[,2])%>%
   ross.wq.tools::fix_site_names()
 #add old field notes if year is 2023 or earlier
-if(year <= 2022){
+if(year <= 2023){
   old_field_notes <- readxl::read_excel(here("data","raw","field_notes","sensor_field_notes.xlsx")) %>%
     mutate(DT = (paste0(date, " ", start_time_mst))) %>%
     mutate(DT = ymd_hm(DT) + hours(7)) %>%
