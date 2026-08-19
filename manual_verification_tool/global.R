@@ -27,6 +27,9 @@ options(shiny.autoload.r = TRUE)
 
 `%nin%` = Negate(`%in%`)
 
+#Source global root config first
+source(here("global.R"))
+
 #Source Helper files
 walk(list.files(here("manual_verification_tool", "R"), pattern = "\\.R$", full.names = TRUE), source)
 ##### Colors + parameters #####

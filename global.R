@@ -8,14 +8,6 @@ year_cycle <- paste0(year, "_cycle")
 usgs_flow_dt_start <- paste0(year, "-01-01")
 usgs_flow_dt_end <- paste0(year, "-12-31")
 
-### Directories ###
-# Set global directory paths and ensure symlinks are present in tool directories
-if (requireNamespace("here", quietly = TRUE)) {
-  root_dir <- here::here()
-} else {
-  root_dir <- getwd()
-}
-
 # Set year_cycle path (the directory that contains all the data for a specific year)
 year_cycle_path <- here("data", "raw", "sensor", "manual_data_verification", year_cycle)
 # In progress path
@@ -35,4 +27,3 @@ verified_path <- here(in_progress_path, "verified_directory")
 meta_path <- here(in_progress_path, "meta")
 # Log dir path
 log_dir_path <- here("data","raw", "sensor", "log_download", year)
-
