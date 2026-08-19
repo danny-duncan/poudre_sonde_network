@@ -397,6 +397,8 @@ server <- function(input, output, session) {
         site_name %in% c("pbd", "bellvue", "pman", "pbr", "sfm", "pfal", "chd", "cbri", "joei") ~ "CLAFTCCO",
         site_name %in% c("salyer", "udall", "riverbend", "riverbend_virridy") ~ "CLAFORCO",
         site_name %in% c("cottonwood", "cottonwood_virridy", "elc", "archery", "archery_virridy", "boxcreek", "springcreek", "riverbluffs") ~ "CLABOXCO",
+        site_name %in% c("sfm") ~ "CLASRKCO",
+        site_name %in% c("chd") ~ "JWCCHACO",
         TRUE ~ NA_character_
       )
       if (is.na(abbrev_val)) return(NULL)
@@ -1169,6 +1171,10 @@ server <- function(input, output, session) {
       } else if ("datetime" %in% names(notes)) {
         notes <- notes %>% filter(datetime >= week_min_day & datetime <= week_max_day, site == input$site)
       }
+
+      # Rearrange columns so that visit comments is viewable
+      notes <- notes %>%
+        select(any_of(c("site", "date", "start_time_mst", "visit_comments", "visit_type")), everything())
       
       DT::datatable(notes, options = list(pageLength = 10, scrollX = TRUE))
     } else {
