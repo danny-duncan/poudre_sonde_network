@@ -64,7 +64,7 @@ available_flags <- read_csv(here("data", "raw", "sensor", "manual_data_verificat
 
 #### USGS STREAMFLOW API QUERY
 cdwr_creds <- read_yaml(here("creds","CDWRCreds.yml"))
-stations <- c("CLAFTCCO", "CLAFORCO", "CLABOXCO")
+stations <- c("CLAFTCCO", "CLAFORCO", "CLABOXCO", "CLASRKCO", "JWCCHACO")
 
 global_usgs_flow_data <- tryCatch({
 
