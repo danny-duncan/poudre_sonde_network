@@ -384,6 +384,56 @@ server <- function(input, output, session) {
     }
   })
 
+  # Reactive to hold USGS flow data
+  usgs_flow_data <- reactive({
+    req(input$site, current_week(), isolate(selected_data()))
+
+    week_data <- isolate(selected_data()) %>% filter(week == current_week())
+    week_min_day <- min(week_data$DT_round, na.rm = TRUE)
+    week_max_day <- max(week_data$DT_round, na.rm = TRUE)
+
+    all_flow_sites <- input$site
+    flow_data_list <- purrr::map(all_flow_sites, function(site_name) {
+      abbrev_val <- case_when(
+        site_name %in% c("pbd", "bellvue", "pman", "pbr", "sfm", "pfal", "chd", "cbri", "joei") ~ "CLAFTCCO",
+        site_name %in% c("salyer", "udall", "riverbend", "riverbend_virridy") ~ "CLAFORCO",
+        site_name %in% c("cottonwood", "cottonwood_virridy", "elc", "archery", "archery_virridy", "boxcreek", "springcreek", "riverbluffs") ~ "CLABOXCO",
+        site_name %in% c("sfm") ~ "CLASRKCO",
+        site_name %in% c("chd") ~ "JWCCHACO",
+        TRUE ~ NA_character_
+      )
+      if (is.na(abbrev_val)) return(NULL)
+
+      tryCatch({
+        s_date <- week_min_day - days(2)
+        e_date <- week_max_day + days(2)
+
+        if (!is.null(global_usgs_flow_data) && nrow(global_usgs_flow_data) > 0) {
+          # Use pre-fetched global data
+          data <- global_usgs_flow_data %>%
+            filter(abbrev == abbrev_val,
+                   datetime >= s_date,
+                   datetime <= e_date)
+        } else {
+          # Fallback if global data isn't available
+          data <- cdssr::get_telemetry_ts(abbrev = abbrev_val,
+                                          start_date = as.character(as.Date(s_date)),
+                                          end_date = as.character(as.Date(e_date)),
+                                          timescale = "raw")
+        }
+
+        if (nrow(data) > 0) {
+          data$site <- site_name
+          data$abbrev <- abbrev_val
+          return(data)
+        }
+        return(NULL)
+      }, error = function(e) NULL)
+    }) %>% purrr::compact()
+
+    if (length(flow_data_list) > 0) bind_rows(flow_data_list) else NULL
+  })
+
   ## Main plot (main plot starts here)
   output$main_plot <- renderPlot({
 
@@ -624,7 +674,7 @@ server <- function(input, output, session) {
       if(("plot_log10" %in% input$plot_options)){
         p <- p + scale_y_log10()
       }
-      
+
       if(!("show_legend" %in% input$plot_options)) {
         p <- p + theme(legend.position = "none")
       }
@@ -791,7 +841,7 @@ server <- function(input, output, session) {
       if(("plot_log10" %in% input$plot_options)){
         p <- p + scale_y_log10()
       }
-      
+
       if(!("show_legend" %in% input$plot_options)) {
         p <- p + theme(legend.position = "none")
       }
@@ -999,7 +1049,7 @@ server <- function(input, output, session) {
 
     # Create USGS Flow Plot
     all_flow_sites <- input$site
-    
+
     flow_data_list <- map(all_flow_sites, function(site_name) {
       abbrev <- case_when(
         site_name %in% c("pbd", "bellvue", "pman", "pbr", "sfm", "pfal", "chd", "cbri", "joei") ~ "CLAFTCCO",
@@ -1008,22 +1058,22 @@ server <- function(input, output, session) {
         TRUE ~ NA_character_
       )
       if (is.na(abbrev)) return(NULL)
-      
+
       current_year <- year(week_min_day)
-      
+
       # Check if we need to fetch new yearly data
       if (is.null(usgs_yearly_data()) || is.null(usgs_current_year()) || usgs_current_year() != current_year) {
         showNotification("Fetching USGS flow data for the year...", id = "usgs_fetch")
-        
+
         gauges <- c("CLAFTCCO", "CLAFORCO", "CLABOXCO")
         start_date <- paste0(current_year, "-01-01")
         end_date <- paste0(current_year, "-12-31")
-        
+
         yearly_data_list <- map(gauges, function(abbrev_val) {
           tryCatch({
-            data <- cdssr::get_telemetry_ts(abbrev = abbrev_val, 
-                                            start_date = start_date, 
-                                            end_date = end_date, 
+            data <- cdssr::get_telemetry_ts(abbrev = abbrev_val,
+                                            start_date = start_date,
+                                            end_date = end_date,
                                             timescale = "raw")
             if (nrow(data) > 0) {
               data$abbrev <- abbrev_val
@@ -1032,7 +1082,7 @@ server <- function(input, output, session) {
             return(NULL)
           }, error = function(e) NULL)
         }) %>% compact()
-        
+
         if (length(yearly_data_list) > 0) {
           usgs_yearly_data(bind_rows(yearly_data_list))
         } else {
@@ -1041,19 +1091,19 @@ server <- function(input, output, session) {
         usgs_current_year(current_year)
         removeNotification(id = "usgs_fetch")
       }
-      
+
       yearly_df <- usgs_yearly_data()
       if (is.null(yearly_df) || nrow(yearly_df) == 0) return(NULL)
-      
+
       s_date <- week_min_day - days(2)
       e_date <- week_max_day + days(2)
-      
+
       # Filter for this gauge and this time window
-      filtered_data <- yearly_df %>% 
+      filtered_data <- yearly_df %>%
         filter(abbrev == !!abbrev,
                datetime >= s_date,
                datetime <= e_date)
-               
+
       if (nrow(filtered_data) > 0) {
         filtered_data$site <- site_name
         return(filtered_data)
@@ -1063,9 +1113,9 @@ server <- function(input, output, session) {
 
     if (length(flow_data_list) > 0) {
       flow_df <- bind_rows(flow_data_list)
-      
+
       p_flow <- plot_ly()
-      
+
       # Add main site flow
       main_site_flow <- flow_df %>% filter(site == input$site)
       if (nrow(main_site_flow) > 0) {
@@ -1080,14 +1130,14 @@ server <- function(input, output, session) {
             showlegend = FALSE
           )
       }
-      
+
       p_flow <- p_flow %>%
         layout(
           xaxis = list(title = "Date"),
           yaxis = list(title = "USGS Flow (cfs)", type = "log"),
           margin = list(t = 80, b = 40)
         )
-      
+
       plots <- c(plots, list(p_flow))
     }
 
@@ -1178,14 +1228,18 @@ server <- function(input, output, session) {
 
     if (file.exists(field_notes_path)) {
       notes <- arrow::read_parquet(field_notes_path)
-      
+
       # Try filtering by DT_round if it exists, otherwise by date or datetime
       if ("DT_round" %in% names(notes)) {
         notes <- notes %>% filter(DT_round >= week_min_day & DT_round <= week_max_day, site == input$site)
       } else if ("datetime" %in% names(notes)) {
         notes <- notes %>% filter(datetime >= week_min_day & datetime <= week_max_day, site == input$site)
       }
-      
+
+      # Rearrange columns so that visit comments is viewable
+      notes <- notes %>%
+        select(any_of(c("site", "date", "start_time_mst", "visit_comments", "visit_type")), everything())
+
       DT::datatable(notes, options = list(pageLength = 10, scrollX = TRUE))
     } else {
       data.frame(Message = paste("Field notes file not found at", field_notes_path))
