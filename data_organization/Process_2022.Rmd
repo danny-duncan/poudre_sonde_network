@@ -619,24 +619,14 @@ Write back-calibrated data as an .rds file in the 2022 dir
 write_rds(calibrated_data, here(base_dir,"hydro_vu_pull","back_calibration", "calibrated_sensor_data_2022.rds"))
 ```
 
-From here, we will review the back-calibrated data in Juan's ShinyApp
+From here, we will review the back-calibrated data in the calibration_correction_tool ShinyApp.
 
 ```{r}
-## FUTURE WORK: 
-## - Save year as global parameter in process .rmd so you do not need to change code within shinyapp to match year.
-## - Save relative filepath for data and creds folder so each shinyapp doesn't need symlink.
-## - Update shinyapp code to fix Y-axis label bug (Units not showing)
-
-# Set global options for shinyapp
-year <- "2022"
-cycle <- "2022_cycle"
-  
 # Run app
 shiny::shinyAppDir(
   appDir = here("calibration_correction_tool"),
   options = list(width = "100%", height = "100%")
 )
-
 ```
 
 ### 5.6) Manual Calibration Verification
@@ -1001,7 +991,7 @@ write_parquet(final_flags %>% bind_rows(), here(base_dir,"in_progress","raw_data
 
 ### 7.1) Shiny Verification Tool
 
-For manual verification of the data, a ShinyApp has been created that allows users to visualize the data, review the flags, make any necessary corrections, and save the output. The application, and all associated files, are located within "~/shiny_ver_tool".
+For manual verification of the data, a ShinyApp has been created that allows users to visualize the data, review the flags, make any necessary corrections, and save the output. The application, and all associated files, are located within "~/manual_verification_tool".
 
 Key columns added by the tool include:
 - final_status:
@@ -1038,11 +1028,23 @@ shiny::shinyAppDir(
 
 Optical sensor drift is a common issue with in-situ sonde deployments, namely turbidity, fDOM and Chl-A. 
 
-An initial RMarkdown has been created to correct the drift of these parameters for 2025. This document is located at:  "~/data_organization/drift_correction_2025.Rmd".
+This tool is located in the script `drift_correction_tool`.
+Here we are applying the drift corrections identified in the manual verification tool to the data and then saving the output in the "post_verification" folder.
 
-Although not tailored for 2022, future work will implement Juan's code for drift correction of 2022 data.
+The key columns added are:
 
-### 7.3) Data Preparation for Shiny Tools
+- mean_drift_trans: new data column with drift corrected values
+
+- correction_type: what kind of drift correction was applied (exponential, fitted linear, etc)
+
+  - This can also be "non_resolved" if the drift could not be appropriately solved via the current methods.
+    These data are then moved from final_status = "FLAGGED" to final_status = "OMIT"
+    
+- pre_post_source: A, B, C depending on where the correction values came from
+
+  - Outlined in `data_organization/drift_correction_2024.rmd`
+
+### 7.3) Data Preparation for HydroShare Publication
 
 We will be creating two datasets here: 
 - A "raw" dataset that includes all the original data with flags and all "versions" of the data: no manual corrections applied, calibration correction, post verification, and post drift correction.
@@ -1059,7 +1061,7 @@ drift_corrected_data <- map_dfr(drift_corrected_files, read_parquet)%>%
   split(f = list(.$site, .$parameter), sep = "-")%>%
   keep(~ nrow(.x) > 0) #remove any empty datasets
 
-non_drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2025_cycle/in_progress/verified_directory/', pattern = "*.parquet", full.names = TRUE)
+non_drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2022_cycle/in_progress/verified_directory/', pattern = "*.parquet", full.names = TRUE)
 
 non_drift_corrected_data <- map_dfr(non_drift_corrected_files, read_parquet)%>%
   mutate( mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA))%>%
