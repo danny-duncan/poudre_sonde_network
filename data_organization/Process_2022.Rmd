@@ -118,7 +118,7 @@ if (!dir.exists(meta_folder_path)) {
 ### 2.1) Credentials
 ```{r}
 # Configure your credentials files
-mwater_creds_file <- here("creds","creds","mWaterCreds.yml")
+mwater_creds_file <- here("creds","mWaterCreds.yml")
 mWater_creds <- read_yaml(mwater_creds_file)
 
 # pull field data from mWater API
@@ -1033,7 +1033,7 @@ Run this codechunk to launch the manual verification tool. The app will open in 
 ```{r, echo=FALSE}
 
 shiny::shinyAppDir(
-  appDir = here("manual_ver_tool"),
+  appDir = here("manual_verification_tool"),
   options = list(width = "100%", height = "100%")
 )
 ```
