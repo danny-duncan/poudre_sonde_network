@@ -118,7 +118,7 @@ if (!dir.exists(meta_folder_path)) {
 ### 2.1) Credentials
 ```{r}
 # Configure your credentials files
-mwater_creds_file <- here("creds","creds","mWaterCreds.yml")
+mwater_creds_file <- here("creds","mWaterCreds.yml")
 mWater_creds <- read_yaml(mwater_creds_file)
 
 # pull field data from mWater API
@@ -1023,17 +1023,13 @@ invisible(lapply(c("shiny","bslib","DT","tidyverse","lubridate","here","ggpubr",
                    "keys","patchwork","digest","fs","shinyFiles","shinyWidgets","glue","anytime","arrow"),
                  package_loader)
           )
-
-# Set global options for ShinyApp to run for the year
-usgs_flow_dt_start = "2022-01-01"
-usgs_flow_dt_end = "2022-12-31"
 ```
 
 Run this codechunk to launch the manual verification tool. The app will open in a new window or tab in your default web browser.
 ```{r, echo=FALSE}
 
 shiny::shinyAppDir(
-  appDir = here("manual_ver_tool"),
+  appDir = here("manual_verification_tool"),
   options = list(width = "100%", height = "100%")
 )
 ```
