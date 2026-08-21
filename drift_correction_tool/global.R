@@ -64,7 +64,7 @@ site_order <- list(
 
 # Load source scripts containing the functions from your RMD
 source("R/drift_functions.R")
-field_notes <- grab_mWater_sensor_notes(load_mWater())
+field_notes <- grab_mWater_sensor_notes(load_mWater(creds = yaml::read_yaml(here::here("creds", "mWaterCreds.yml"))))
 
 # Load data
 verified_files <- list.files(file.path(in_progress_dir, "verified_directory"),

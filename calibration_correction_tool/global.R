@@ -77,7 +77,7 @@ ross.wq.tools::load_calibration_data(
 
 # Read in field notes
 
-field_notes_data <- ross.wq.tools::load_mWater()%>%
+field_notes_data <- ross.wq.tools::load_mWater(creds = yaml::read_yaml(here::here("creds", "mWaterCreds.yml")))%>%
   mutate(DT_round = floor_date(start_dt, unit = "15 minutes"))%>%
   filter(str_detect(visit_type, "Sensor Calibration, Cleaning or Check"))%>%
   pivot_longer(cols = contains(c("post", "pre" )),

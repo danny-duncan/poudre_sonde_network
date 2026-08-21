@@ -1,7 +1,7 @@
 library(tidyverse)
 library(ross.wq.tools)
 library(arrow)
-sensor_notes <- load_mWater()
+sensor_notes <- load_mWater(creds = yaml::read_yaml(here::here("creds", "mWaterCreds.yml")))
 
 parameter = "depth"
 site_oi = "archery"

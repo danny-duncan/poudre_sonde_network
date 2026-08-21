@@ -1043,6 +1043,14 @@ The key columns added are:
 - pre_post_source: A, B, C depending on where the correction values came from
 
   - Outlined in `data_organization/drift_correction_2024.rmd`
+  
+```{r, echo=FALSE}
+
+shiny::shinyAppDir(
+  appDir = here("drift_correction_tool"),
+  options = list(width = "100%", height = "100%")
+)
+```
 
 ### 7.3) Data Preparation for HydroShare Publication
 
