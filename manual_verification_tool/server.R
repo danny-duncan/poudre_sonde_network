@@ -358,6 +358,8 @@ server <- function(input, output, session) {
   ## Week navigation handlers
   observeEvent(input$prev_week, {
     req(selected_data())
+    session$resetBrush("plot_brush")
+    brushed_areas(list())
     weeks <- unique(selected_data()$week)
     current <- current_week()
     idx <- which(weeks == current)
@@ -368,6 +370,8 @@ server <- function(input, output, session) {
   # Go to next week
   observeEvent(input$next_week, {
     req(selected_data())
+    session$resetBrush("plot_brush")
+    brushed_areas(list())
     weeks <- unique(selected_data()$week)
     current <- current_week()
     idx <- which(weeks == current)
