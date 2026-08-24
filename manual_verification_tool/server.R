@@ -628,6 +628,10 @@ server <- function(input, output, session) {
         }) + #plot other sites
         geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2) #plot main site with colors matching final decision
 
+      if(("add_line" %in% input$plot_options)){
+        p <- p + geom_line(data = week_choice_data %>% filter(!is.na(mean)), aes(y = mean), color = "grey", linewidth = 1)
+      }
+
       #if incl_ex_days = T, then add in the extra data as points
       if(("incl_ex_days" %in% input$plot_options)){
         p <- p +
@@ -804,7 +808,7 @@ server <- function(input, output, session) {
         theme_bw(base_size = 14)
 
       if(("add_line" %in% input$plot_options)){
-        p <- p + geom_line(aes(y = mean), color = "grey", linewidth = 1)
+        p <- p + geom_line(data = week_data %>% filter(!is.na(mean)), aes(y = mean), color = "grey", linewidth = 1)
       }
 
 

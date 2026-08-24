@@ -27,7 +27,7 @@ ui <- page_navbar(
     layout_sidebar(
       sidebar = sidebar(
         width = 350,
-        
+
         # Navigation
         div(
           class = "d-flex justify-content-between align-items-center mb-3",
@@ -41,7 +41,7 @@ ui <- page_navbar(
           keys::keysInput("q_key", "q"),
           actionButton("quit_app", "Quit", class = "btn-danger btn-sm w-100")
         ),
-        
+
         # Weekly Decision
         card(
           card_header(h6("Weekly Decision", class = "m-0")),
@@ -51,7 +51,7 @@ ui <- page_navbar(
             uiOutput("submit_decision_ui")
           )
         ),
-        
+
         # Data Brush Tools
         card(
           card_header(h6("Brush Actions", class = "m-0")),
@@ -70,7 +70,7 @@ ui <- page_navbar(
             )
           )
         ),
-        
+
         # Plot Options
         card(
           card_header(h6("Plot Options", class = "m-0")),
@@ -84,10 +84,11 @@ ui <- page_navbar(
                                            "Log 10" = "plot_log10",
                                            "Extra Data" = "incl_ex_days",
                                            "Show Legend" = "show_legend"),
-                               selected = c("incl_ex_days", "show_legend"))
+                               selected = c("incl_ex_days", "show_legend",
+                                            "add_line", "remove_omit"))
           )
         ),
-        
+
         # Additional Sites
         card(
           card_header(h6("Additional Sites", class = "m-0")),
@@ -101,11 +102,11 @@ ui <- page_navbar(
           )
         )
       ), # end sidebar
-      
+
       # Main layout for plots
       layout_columns(
         col_widths = c(8, 4),
-        
+
         # Main plot card
         card(
           full_screen = TRUE,
@@ -118,11 +119,10 @@ ui <- page_navbar(
                        ))
           )
         ),
-        
+
         # Sub plots card
         navset_card_tab(
           id = "additional_tabs",
-          title = h6("Additional Parameters", class = "m-0"),
           nav_panel("Plots",
             layout_columns(
               col_widths = c(6, 6),
