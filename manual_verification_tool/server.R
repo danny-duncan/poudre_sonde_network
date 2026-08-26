@@ -1166,8 +1166,9 @@ server <- function(input, output, session) {
     week_max_day <- max(week_data$DT_round, na.rm = TRUE)
 
     # Use the existing meta folder path for this project
-    field_notes_path <- here(meta_path, "field_notes_21-22.parquet")
-
+    if(year(week_min_day) <= 2023){
+      # Use the existing meta folder path for this project
+      field_notes_path <- here(meta_path, "field_notes_21-22.parquet")
 
     if (file.exists(field_notes_path)) {
       notes <- arrow::read_parquet(field_notes_path)
@@ -1187,6 +1188,23 @@ server <- function(input, output, session) {
     } else {
       data.frame(Message = paste("Field notes file not found at", field_notes_path))
     }
+
+    } else{
+      mWater_creds <- read_yaml(here("creds", "mWaterCreds.yml")) #this should be moved to global.R so that it is only read in once, but for now it is here
+      #otherwise use mWater field notes
+      mWater_data <- ross.wq.tools::load_mWater(creds = mWater_creds)
+      # Only extract sensor visits for our site during the current week
+      notes <- ross.wq.tools::grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
+        filter(DT_round >= week_min_day & DT_round <= week_max_day, site == input$site) %>% # DT round is in MST
+        select(any_of(c("site", "date", "start_DT", "visit_comments", "visit_type")), everything())
+
+      if(nrow(notes) > 0) {
+        DT::datatable(notes, options = list(pageLength = 10, scrollX = TRUE))
+      } else {
+        data.frame(Message = "No field notes available for the selected week and site.")
+      }
+    }
+
   })
 
   #### Brush Tools ####
