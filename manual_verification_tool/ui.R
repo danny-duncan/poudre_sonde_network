@@ -71,6 +71,19 @@ ui <- page_navbar(
           )
         ),
 
+        # Additional Sites
+        card(
+          card_header(h6("Additional Sites", class = "m-0")),
+          card_body(
+            class = "p-2",
+            selectizeInput("add_sites", label = NULL,
+                           choices = available_sites,
+                           multiple = TRUE,
+                           options = list(plugins = "remove_button"),
+                           width = "100%")
+          )
+        ),
+
         # Plot Options
         card(
           card_header(h6("Plot Options", class = "m-0")),
@@ -86,19 +99,6 @@ ui <- page_navbar(
                                            "Show Legend" = "show_legend"),
                                selected = c("incl_ex_days", "show_legend",
                                             "add_line", "remove_omit"))
-          )
-        ),
-
-        # Additional Sites
-        card(
-          card_header(h6("Additional Sites", class = "m-0")),
-          card_body(
-            class = "p-2",
-            selectizeInput("add_sites", label = NULL,
-                           choices = available_sites,
-                           multiple = TRUE,
-                           options = list(plugins = "remove_button"),
-                           width = "100%")
           )
         )
       ), # end sidebar
