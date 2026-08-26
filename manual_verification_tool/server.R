@@ -397,15 +397,21 @@ server <- function(input, output, session) {
 
     all_flow_sites <- input$site
     flow_data_list <- purrr::map(all_flow_sites, function(site_name) {
-      abbrev_val <- case_when(
-        site_name %in% c("pbd", "bellvue", "pman", "pbr", "sfm", "pfal", "chd", "cbri", "joei") ~ "CLAFTCCO",
-        site_name %in% c("salyer", "udall", "riverbend", "riverbend_virridy") ~ "CLAFORCO",
-        site_name %in% c("cottonwood", "cottonwood_virridy", "elc", "archery", "archery_virridy", "boxcreek", "springcreek", "riverbluffs") ~ "CLABOXCO",
-        site_name %in% c("sfm") ~ "CLASRKCO",
-        site_name %in% c("chd") ~ "JWCCHACO",
-        TRUE ~ NA_character_
-      )
-      if (is.na(abbrev_val)) return(NULL)
+      abbrev_vals <- if (site_name %in% c("pbd", "bellvue", "pman", "pbr", "pfal", "cbri", "joei")) {
+        "CLAFTCCO"
+      } else if (site_name %in% c("salyer", "udall", "riverbend", "riverbend_virridy")) {
+        "CLAFORCO"
+      } else if (site_name %in% c("cottonwood", "cottonwood_virridy", "elc", "archery", "archery_virridy", "boxcreek", "springcreek", "riverbluffs")) {
+        "CLABOXCO"
+      } else if (site_name %in% c("sfm")) {
+        c("CLASRKCO", "CLAFTCCO")
+      } else if (site_name %in% c("chd")) {
+        c("JWCCHACO", "CLAFTCCO")
+      } else {
+        NA_character_
+      }
+      
+      if (all(is.na(abbrev_vals))) return(NULL)
 
       tryCatch({
         s_date <- week_min_day - days(2)
@@ -417,15 +423,17 @@ server <- function(input, output, session) {
           # Safely determine the column name (station_abbrev or abbrev)
           col_name <- if("station_abbrev" %in% names(global_usgs_flow_data)) "station_abbrev" else "abbrev"
           
-          data <- global_usgs_flow_data %>%
-            filter(!!sym(col_name) == abbrev_val,
-                   datetime >= s_date,
-                   datetime <= e_date)
-                   
-          if (nrow(data) > 0) {
-            data$site <- site_name
-            data$abbrev <- abbrev_val
-            return(data)
+          for (abbrev_val in abbrev_vals) {
+            data <- global_usgs_flow_data %>%
+              filter(!!sym(col_name) == abbrev_val,
+                     datetime >= s_date,
+                     datetime <= e_date)
+                     
+            if (nrow(data) > 0) {
+              data$site <- site_name
+              data$abbrev <- abbrev_val
+              return(data)
+            }
           }
         }
         
