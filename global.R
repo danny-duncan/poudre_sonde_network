@@ -9,21 +9,21 @@ usgs_flow_dt_start <- paste0(year, "-01-01")
 usgs_flow_dt_end <- paste0(year, "-12-31")
 
 # Set year_cycle path (the directory that contains all the data for a specific year)
-year_cycle_path <- here("data", "raw", "sensor", "manual_data_verification", year_cycle)
+year_cycle_path <- here::here("data", "raw", "sensor", "manual_data_verification", year_cycle)
 # In progress path
-in_progress_path <- here(year_cycle_path, "in_progress")
+in_progress_path <- here::here(year_cycle_path, "in_progress")
 # Raw data path
-raw_data_path <- here(in_progress_path, "raw_data")
+raw_data_path <- here::here(in_progress_path, "raw_data")
 # All data path
-all_data_path <- here(in_progress_path, "all_data_directory")
+all_data_path <- here::here(in_progress_path, "all_data_directory")
 # Pre-verification path
-pre_verification_path <- here(in_progress_path, "pre_verification_directory")
+pre_verification_path <- here::here(in_progress_path, "pre_verification_directory")
 # Intermediary path
-intermediary_path <- here(in_progress_path, "intermediary_directory")
+intermediary_path <- here::here(in_progress_path, "intermediary_directory")
 # Verified data path
-verified_path <- here(in_progress_path, "verified_directory")
+verified_path <- here::here(in_progress_path, "verified_directory")
 
 # Meta path
-meta_path <- here(in_progress_path, "meta")
+meta_path <- here::here(in_progress_path, "meta")
 # Log dir path
-log_dir_path <- here("data","raw", "sensor", "log_download", year)
+log_dir_path <- here::here("data","raw", "sensor", "log_download", year)
