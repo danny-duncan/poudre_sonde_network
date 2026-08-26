@@ -35,17 +35,12 @@ invisible(
   })
 )
 
-# Load data once when app starts
-#### ---- UPDATE YEAR WHEN NEW DATA IS ADDED ---- ####
-year = "2023"
-cycle = paste0(year, "_cycle")
-#### -------------------------------------------- ####
-
 # Define file paths for tracking system
-data_dir <- here::here("data", "raw", "sensor", "manual_data_verification", cycle,"hydro_vu_pull","back_calibration")
+# EDIT: Update the data_dir path to point to the data folder in the parent poudre_sonde_network dir.
+data_dir <- file.path(year_cycle_path, "hydro_vu_pull","back_calibration")
 tracking_file <- file.path(data_dir,"calibrated_sensor_field_data_tracking.rds")
 finalized_file <- file.path(data_dir, "calibrated_sensor_field_data_finalized.rds")
-original_file <- here::here(data_dir,paste0("calibrated_sensor_data_", year, ".rds"))
+original_file <- file.path(data_dir,paste0("calibrated_sensor_data_", year, ".rds"))
 
 # Initialize tracking data (unverified calibrations)
 if (file.exists(tracking_file)) {
@@ -82,7 +77,7 @@ ross.wq.tools::load_calibration_data(
 
 # Read in field notes
 
-field_notes_data <- ross.wq.tools::load_mWater()%>%
+field_notes_data <- ross.wq.tools::load_mWater(creds = yaml::read_yaml(here::here("creds", "mWaterCreds.yml")))%>%
   mutate(DT_round = floor_date(start_dt, unit = "15 minutes"))%>%
   filter(str_detect(visit_type, "Sensor Calibration, Cleaning or Check"))%>%
   pivot_longer(cols = contains(c("post", "pre" )),
