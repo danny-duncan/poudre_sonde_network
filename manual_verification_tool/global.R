@@ -18,6 +18,7 @@ library(shinyWidgets)
 library(glue)
 library(anytime)
 library(arrow)
+library(yaml)
 library(cdssr) # Devtools packge, code to install:
 # install.packages("devtools")
 #devtools::install_github("anguswg-ucsb/cdssr")
