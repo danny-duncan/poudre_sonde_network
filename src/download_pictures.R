@@ -111,34 +111,39 @@ download_pictures <- function(field_notes, download_path = here("data", "raw", "
 
 
 
-  #grab notes for sites with other pictures
-  other_photos <- field_notes%>%
-    #grab needed columns
-    select(site, start_dt,other_pic,other_pic_descriptor)%>%
-    #get rid of instances with no other pics
-    filter(!is.na(other_pic))%>%
+  other_photos <- field_notes %>%
+    select(site, start_dt, other_pic, other_pic_descriptor) %>%
+    filter(!is.na(other_pic)) %>%
     mutate(
       site = tolower(site),
-      #Date format for pictures
       yyyymmdd = format(start_dt, "%Y%m%d"),
-      # separate multiple URLs in other pic column
       other_pic_sep = str_split(other_pic, "; "),
-      #seperate multiple descriptors in the descriptor column
-      other_descriptor_sep = str_split(other_pic_descriptor, ","))%>%
-    #for rows with multiple pictures, create a new row for each picture
+      other_descriptor_sep = str_split(other_pic_descriptor, ",")
+    ) %>%
+    # flag mismatches instead of letting unnest() error out
+    mutate(mismatch = lengths(other_pic_sep) != lengths(other_descriptor_sep))
 
-    unnest(cols = c(other_pic_sep, other_descriptor_sep))%>%
-    #remove excess columns and rename sep columns to match old columns
-    select(site, start_dt,yyyymmdd, other_pic = other_pic_sep, other_pic_descriptor = other_descriptor_sep)%>%
-    # make descriptor lower case and remove any spaces in the name
-    mutate(other_pic_descriptor = tolower(str_replace_all(other_pic_descriptor, " ", "_")),
-           other_filename = case_when(!is.na(other_pic) ~ here(paste0(here(download_path), "/", site, "_", yyyymmdd, "_", other_pic_descriptor, ".jpg"))),
-           # Check to see if photo has already been downloaded
-           other_downloaded = case_when(
-             is.na(other_filename) ~ NA,
-             other_filename %in% all_file_names ~ TRUE,
-             TRUE ~ FALSE
-           ))
+  # check flagged rows before proceeding
+  mismatches <- other_photos %>% filter(mismatch)
+  if(nrow(mismatches) > 0) {
+  message("Found ", nrow(mismatches), " rows with mismatched other_pic and other_pic_descriptor lengths. Please check and correct the following entries:")
+  print(mismatches%>% select(site, yyyymmdd))
+  }
+
+  other_photos <- other_photos %>%
+    filter(!mismatch) %>%
+    unnest(cols = c(other_pic_sep, other_descriptor_sep)) %>%
+    select(site, start_dt, yyyymmdd, other_pic = other_pic_sep, other_pic_descriptor = other_descriptor_sep) %>%
+    mutate(other_pic_descriptor = str_replace_all(other_pic_descriptor, " ", "_"),
+           other_pic_descriptor = str_remove(other_pic_descriptor, "^_"),
+           other_pic_descriptor = tolower(other_pic_descriptor),
+      other_filename = case_when(!is.na(other_pic) ~ here(paste0(here(download_path), "/", site, "_", yyyymmdd, "_", other_pic_descriptor, ".jpg"))),
+      other_downloaded = case_when(
+        is.na(other_filename) ~ NA,
+        other_filename %in% all_file_names ~ TRUE,
+        TRUE ~ FALSE
+      )
+    )
 
 # find all the descriptors > 25 characters
 
