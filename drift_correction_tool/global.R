@@ -36,8 +36,9 @@ invisible(
   })
 )
 
-# EDIT: Year and cycle values set in the Process_2022.rmd
+#Source global root config first
 # This prevents the app from needing to be updated every year when new data is added
+source(here("global.R"))
 ####---- SET YEAR -----###
 # year = "2022"
 # year_cycle = paste0( year, "_cycle")
