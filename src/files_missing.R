@@ -39,9 +39,13 @@ files_missing <- function(field_notes, sonde_tracking_file_path, cal_report_file
     filter(!is.na(sn))%>%
     mutate(site = tolower(site))
 
+  #Sites to ignore for the Loveland Project
+  loveland_sites <- c("grgr_catwalk", "canal", "big_thompson")
+
   #grab sensor notes that have logs or cal reports that should be  downloaded
   sensor_files <- field_notes%>%
     filter(year(DT_round) == field_season)%>%
+    filter(!site %in% loveland_sites)%>%
     filter(grepl("Sensor",visit_type, ignore.case = TRUE))%>%
     filter(cal_report_collected|log_downloaded)%>%
     select(site, crew, start_DT,end_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
