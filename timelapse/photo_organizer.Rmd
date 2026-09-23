@@ -1,7 +1,7 @@
 ---
 title: "Organize Photos"
 author: "Sam Struthers"
-date: "1/26/24"
+date: "8/12/2026"
 output: html_document
 ---
 
@@ -21,80 +21,166 @@ library(png)
 library(grid)
 library(ggthemes)
 library(patchwork)
+library(here)
 ```
+
 # Basic task:
-Organize all site photos into individual site folders
-Don't grab videos or data that has the wrong dates
+
+Organize all site photos into individual site folders in the Timelapse OneDrive Folder (Contact Sam Struthers for access)
+
+## Setup
+
+- Symlink timelapse folder to PSN root directory
+- Create two local folders in the timelapse folder: "to_be_compiled" and "zip_dump"
+
+## Running the Script
+
+- Grab the SD card from the camera and copy all the files to a folder in the "to_be_compiled" folder.
+  - The folder name should include the site name and the date range of the photos (e.g., "archery_20260301_20260331").
+    - Double check that the site name is spelled correctly and matches one of the following: bellvue, tamasag, legacy, timberline, prospect, riverbend, boxelder, archery, riverbluffs, rist, elc. If the site name is not spelled correctly or does not match one of these names, the script will throw an error.
+  - **IMPORTANT: Make sure that the camera was recording the correct datetimes, If it wasn't, we cannot use this script to compile the photos.**
+- Source/Run the compile_files function
+- Run the function over the folder paths as needed.
+  - This can take \~ 5 min per site per month's worth of photos
+- Copy the zip files in zip_dump to the ROSS field harddrive
+- Delete/Clear out your trash as you go along :)
 
 ## Get all the names
 
 ```{r}
 # select site
 
-compile_file_path <- "timelapse_data/2024_compiled/"
 
-compile_files <- function(folder_name){
-  site <- str_extract(folder_name, "tamasag|legacy|timberline|prospect|boxelder|archery|riverbluffs|rist|elc")
-  photo_files <- list.files(path = folder_name, full.names = TRUE, recursive = TRUE)
-  
-  #check to see if the folder paths for each site exist, if not, create them in the compile_file_path
-  
-  if(!dir.exists(paste0(compile_file_path, site))){
-    dir.create(paste0(compile_file_path, site), recursive = TRUE)
-  }
-  
-  #files in folder
-compiled_folder_files <- list.files(path = paste0(compile_file_path, site), full.names = TRUE)
+compile_files <- function(folder_name, compile_file_path = "timelapse_data/2026_compiled/"){
+site <- str_extract(folder_name, "bellvue|tamasag|legacy|timberline|prospect|riverbend|boxelder|archery|riverbluffs|rist|elc")
+if (is.na(site)) {
+  stop(paste0("Error: Could not extract a valid site name from '", folder_name, 
+              "'. Please check your folder spelling!"))
+}
+
+if (site == "rist" |site == "tamasag" ) {
+  site <- "bellvue"
+}
+if (site == "prospect") {
+  site <- "cottonwood"
+}
+if (site == "timberline") {
+  site <- "elc"
+}
+if (site == "legacy") {
+  site <- "salyer"
+}
+
+photo_files <- list.files(path = folder_name, full.names = TRUE, recursive = TRUE)
+
+year <- str_extract(compile_file_path, "\\d{4}")
+year_check <- grepl(pattern = year, x = folder_name)
+if(!year_check){
+  stop(paste0("Folder name does not contain the year ", year))
+}  
+
+# Ensure target directory exists
+dest_path <- paste0(compile_file_path, site, "/")
+if(!dir.exists(dest_path)){
+  dir.create(dest_path, recursive = TRUE)
+}
+#zip the original folder first
+extract_folder_name <- basename(folder_name)
+
+folder_name_zip <- here("timelapse/zip_dump",paste0(extract_folder_name, ".zip"))
+zip(zipfile = folder_name_zip, files = folder_name)
+
+# Get files already in folder to avoid overwriting/re-processing
+compiled_folder_files <- list.files(path = dest_path, full.names = TRUE)
+
+print(paste0("Compiling ", folder_name))
 
 photo_renamer <- function(file) {
-  #grab dt from file
-  dt <- read_exif(path = file,
-                  tags = c("DateTimeOriginal")) %>%
+  # Grab dt from file
+  dt <- read_exif(path = file, tags = c("DateTimeOriginal")) %>%
     pull(DateTimeOriginal) %>%
-    parse_date_time("YmdHMS", tz="MST")%>%
+    parse_date_time("YmdHMS", tz="MST") %>%
     format("%Y%m%d_%H%M")
-  #create new file name from dt
-  new_file_name <- paste0(compile_file_path,site,"/", dt,'.JPG')
-
-  #check to see if this file is already in the folder
-  if(new_file_name %nin% compiled_folder_files){
-    #if it is not, copy it over
-  file.copy(file,to =  new_file_name)  
+  
+  # Create the target file path
+  new_file_name <- paste0(dest_path, dt, '.JPG')
+  
+  # Check if a file with this exact timestamp already exists in the destination
+  if (new_file_name %in% compiled_folder_files || file.exists(new_file_name)) {
+    # Delete the duplicate source file so it doesn't get left behind
+    file.remove(file)
+    print(paste0("Skipped & deleted duplicate source file for timestamp: ", dt))
+    
+  } else {
+    # If it doesn't exist, move and rename it
+    success <- file.rename(from = file, to = new_file_name)  
+    
+    if(success) {
+      print(paste0("Moved & Renamed: ", basename(file), " -> ", basename(new_file_name)))
+      # Dynamically add the new file to our tracking vector so subsequent loop items catch it
+      compiled_folder_files <<- c(compiled_folder_files, new_file_name)
+    } else {
+      warning(paste0("Failed to move: ", file))
+    }
   }
-  
-  
 }
-map(photo_files, photo_renamer)
+
+# Process the files
+walk(photo_files, photo_renamer)
+
+#delete the folder after moving all files
+fs::dir_delete(folder_name)
 print(paste0("Finished ", folder_name))
 
 }
-
-#to be compiled folder
-folders <- list.files(path = "timelapse_data/to_be_compiled/", full.names = TRUE)%>%
-  # include files that do not have WRONGDATES in the name
-  str_subset("WRONGDATES", negate = TRUE)%>%
-  str_subset("VIDEOS", negate = TRUE)
-  
-  #copy all the files to the compiled folder
-  map(folders, compile_files)
-
-
-
-
 ```
 
-# view timelapse year coverage
+# Compiling Files
+
+Couple of examples here:
+
+## Single Folder
+
+```{r}
+working_folder <- "timelapse/to_be_compiled/riverbluffs_20260330_20260430/"
+compile_files(folder_name = working_folder)
+```
+
+## Whole to be compiled folder
+
+```{r}
+folders <- list.files(path = "timelapse/to_be_compiled/", full.names = TRUE)
+
+walk(folders, compile_files)
+```
+
+## Subset of the folders for a specific site and year
+
+```{r}
+#Subet of folders for a specific site and year
+folders <- list.files(path = "timelapse/to_be_compiled/", full.names = TRUE)%>%
+  # include files that do not have WRONGDATES in the name
+  str_subset("riverbend", negate = FALSE)%>%
+  str_subset("2025", negate = FALSE)
+#copy all the files to the compiled folder
+ walk(folders, compile_files)
+```
+
+# Plots to view timelapse coverage
+
+Not necessary to run this but you can if you want to make sure the files you uploaded were saved correctly
+
 ```{r}
 # read in all files names and then break into site and date time by parsing the file and folder name
-all_files <- list.files(path = compile_file_path, full.names = TRUE, recursive = TRUE)%>%
+all_files <- map(c("timelapse_data/2023_compiled", "timelapse_data/2024_compiled", "timelapse_data/2025_compiled", "timelapse_data/2026_compiled"), ~list.files(path = .x, full.names = TRUE, recursive = TRUE))%>%
   map_df(~{
     site <- str_extract(.x, "tamasag|legacy|timberline|prospect|boxelder|archery|riverbluffs|rist|elc")
     date <- str_extract(.x, "\\d{8}_\\d{4}")
     tibble(site = site, date = date, photo = 1)
   })%>%
-  mutate(date = parse_date_time(date, "Ymd_HM"))
- 
-
+  mutate(date = parse_date_time(date, "Ymd_HM"))%>%
+  ross.wq.tools::fix_site_names()%>%
+  mutate(site = ifelse(site== "rist", "bellvue", site))
 
 # plot the number of photos per day facet by site
 all_files%>%
@@ -106,4 +192,3 @@ all_files%>%
   #theme(axis.text.x = element_text(angle = 90, hjust = 1))+
   labs(x = "Date", y = "Number of Photos", title = "Number of Photos per Day")
 ```
-

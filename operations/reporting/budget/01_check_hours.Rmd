@@ -22,18 +22,18 @@ updating the xlsx to confirm everything reconciles before generating reports.
 knitr::opts_chunk$set(echo = FALSE, message = FALSE)
 source(here::here("operations/reporting/budget/00_config.R"))
 ###### ------ Month/Year SELECTOR ------ ######
-month_select <- 7
+month_select <- 8
 year_select  <- 2026
 ###### ------ SYMPHONY 53-ACCOUNT $ AMOUNTS ------ ######
 #    Paste in the $ billed per person (whole project, both PWQN + UCLP combined,
 #    since they share one job code) from Symphony each month.
 hours_billed_raw <- tibble::tribble(
   ~person,        ~monthly_amount,
-  "STRUTHERS",    0,
+  "STRUTHERS",    3701.32,
   "DE LA TORRE",  0,
   "WILLI",        0,
-  "ROUIN",        0,
-  "DUNCAN",       0
+  "ROUIN",        2701.62,
+  "DUNCAN",       2856
 )
 
 ###### ------ NON-PERSONNEL (equipment/travel) COSTS, per project------ ######
@@ -64,6 +64,7 @@ Update the `staff_timeclock` sheet in `pwqn_budget_reporting.xlsx` until this ta
 
 ```{r hours-check}
 reconciled$hours_check
+reconciled$hours_billed
 ```
 
 ## 2. Dollars: logged (staff hours x rate) vs. Symphony $ billed
@@ -86,6 +87,17 @@ final_totals <- calc_final_totals(timeclock, hourly_rates, equipment, travel, id
   mutate(project = if_else(is.na(project), "TOTAL", project))
 
 final_totals # Double check the totals against the Symphony values and Invoicing sheet
+
+pivoted_totals <- final_totals %>%
+  pivot_longer(
+    cols = -project,
+    names_to = "cost_category",
+    values_to = "amount"
+  ) %>%
+  pivot_wider(
+    names_from = project,
+    values_from = amount
+  )
 ```
 
 

@@ -1054,25 +1054,176 @@ shiny::shinyAppDir(
 
 ### 7.3) Data Preparation for HydroShare Publication
 
-We will be creating two datasets here: 
-- A "raw" dataset that includes all the original data with flags and all "versions" of the data: no manual corrections applied, calibration correction, post verification, and post drift correction.
-This is for posterity and to have a record of what the original data looked like before and after manual verification/corrections.
+#### 7.3.1) Depth Corrections
+
+If we have a site visit where depth was adjusted up or down, we want to try to correct that.
+Ideally we do this around the "Apply Back Calibration" step but that was not done for this year.
+
+##### Function
+
+```{r}
+
+adjust_depth_window <- function(data, 
+                                site_oi,
+                                win_start, 
+                                win_end, 
+                                dt_before, 
+                                dt_start, 
+                                site_col = "site",
+                                tz = "MST") {
+  #Double check that the tz matches the data$DT_round tz
+  if (tz(data$DT_round) != tz) {
+    stop(paste("Timezone mismatch: data$DT_round is in", tz(data$DT_round), "but tz argument is", tz))
+  }
+  #Double check that this site exists in the data
+  if (!site_oi %in% unique(data[[site_col]])) {
+    stop(paste("Site", site_oi, "not found in data. Available sites:", paste(unique(data[[site_col]]), collapse = ", ")))
+  }  
+  
+  w_start   <- ymd_hm(win_start, tz = tz)
+  w_end     <- ymd_hm(win_end, tz = tz)
+  t_before  <- ymd_hm(dt_before, tz = tz)
+  t_start   <- ymd_hm(dt_start, tz = tz)
+  
+  # Ensure target column exists; initialize with 'mean' if it's the first run
+  if (!"adj_depth" %in% names(data)) {
+    data <- data %>% 
+      mutate(adj_depth = mean)%>%
+      mutate(depth_corrected = FALSE)
+  }
+  
+  # Extract values specifically for this site using current state of adj_depth
+  site_mask <- data[[site_col]] == site_oi
+  val_before <- data$adj_depth[site_mask & data$DT_round == t_before]
+  val_start  <- data$adj_depth[site_mask & data$DT_round == t_start]
+  
+  # Safety Check: check if timestamps exist
+  if (length(val_before) == 0 || length(val_start) == 0) {
+    warning(paste("Target timestamps missing for site:", site, "- Skipping."))
+    return(data)
+  }
+  
+  offset <- val_before[1] - val_start[1]
+  
+  # Update ONLY the matching rows, leaving all other sites/rows untouched
+  data %>%
+    mutate(
+      adj_depth = if_else(
+        .data[[site_col]] == site_oi & DT_round >= w_start & DT_round <= w_end & final_status != "OMIT",
+        adj_depth + offset,
+        adj_depth
+      ), 
+      depth_corrected = if_else(
+        .data[[site_col]] == site_oi & DT_round >= w_start & DT_round <= w_end,
+        TRUE,
+        depth_corrected
+      ), 
+      user_flag = if_else(
+        .data[[site_col]] == site_oi & DT_round >= w_start & DT_round <= w_end,
+        gsub("calibration error", "", user_flag),
+        user_flag
+      ), 
+      user_flag = if_else(user_flag == "", NA_character_, user_flag), 
+      #Update decision to "PASS"
+      final_status = if_else(
+        .data[[site_col]] == site_oi & DT_round >= w_start & DT_round <= w_end & final_status != "OMIT",
+        "PASS",
+        final_status
+      )
+    )
+}
+
+```
+
+##### Applying
+
+```{r}
+
+depth_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2022_cycle/in_progress/verified_directory/', pattern = "*.parquet", full.names = TRUE)%>%
+  grep(pattern = "depth", x = ., ignore.case = TRUE,value = T)
+
+depth_data <- map_dfr(depth_files, read_parquet)%>%
+  #Riverbend Depth Adjustment
+    adjust_depth_window(
+    site_oi      = "riverbend",
+    win_start = "2022-09-29 16:30",
+    win_end   = "2022-11-08 10:15",
+    dt_before = "2022-09-29 15:30",
+    dt_start  = "2022-09-29 16:30"
+  )%>%
+    adjust_depth_window(
+    site_oi      = "riverbend",
+    win_start = "2022-11-08 10:30",
+    win_end   = "2022-11-15 14:45",
+    dt_before = "2022-11-08 10:15",
+    dt_start  = "2022-11-08 10:30"
+  )%>%
+  #remove any instances where the final status is OMIT from the mean_analysis column so that they are not used in analysis
+  mutate(mean_analysis = ifelse(final_status  %in% c("FLAGGED", "PASS"), adj_depth, NA))
+
+
+
+final_depth_data<- depth_data%>%
+  mutate(#double check that user flag is consistent with final status
+          user_flag = if_else(final_status == "PASS", NA, user_flag))%>%
+  select(DT_round, DT_join, site, parameter,units, 
+         value_raw = mean_pre_cal, #orginal raw data
+         value_post_cal_corr = adj_depth, # calibration corrected depth (code above)
+         value_post_ver = mean_analysis, # Omit data removed
+         value_post_drift_corr = mean_analysis,   # same as omit data removed
+         auto_qc_flag = auto_flag, mal_flag, 
+         user_qc_flag = user_flag, qc_status = final_status)
+
+
+ggplotly(ggplot(final_depth_data%>%filter(site %in% c( "riverbend")), aes(x = DT_round, y = value_raw))+
+  geom_point()+
+  geom_point(aes(y = value_post_ver, color = user_qc_flag),  alpha = 1)+
+  #geom_line(aes(y = value_post_cal_corr), color = "black", alpha = 0.5)+
+
+  labs(title = "Depth Data with Adjustments",
+       x = "Date",
+       y = "Depth (m)",
+       color = "Depth Corrected")+
+  facet_wrap(~site, scales = "free_y"))
+
+```
+
+
+## Organizing Data for pub
+
+We will be creating two datasets here:
+
+- A "raw" dataset that includes all the original data with flags and all "versions" of the data:
+
+  - no manual corrections applied, calibration correction, post verification, and post drift correction.
+
+  - This is for posterity and to have a record of what the original data looked like before and after manual verification/corrections.
+
 - A "cleaned" dataset that includes only the final value (post drift correction if it exists, post verification if not) and a column indicating what modifications were made to the data (manual exclusion, calibration correction, drift correction, etc).
 
-This is the dataset that will be uploaded to HydroShare and used for analysis.
+Both datasets will be uploaded to HydroShare
 
 ```{r}
 drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2022_cycle/post_verification/', pattern = "*.parquet", full.names = TRUE)
 
 drift_corrected_data <- map_dfr(drift_corrected_files, read_parquet)%>%
-  select(DT_round, DT_join, site, parameter,units, value_raw = mean_pre_cal, value_post_cal_corr = mean, value_post_ver = mean_analysis, value_post_drift_corr = mean_drift_trans,   auto_qc_flag = auto_flag, mal_flag, user_qc_flag = user_flag, qc_status = final_status)%>%
-  split(f = list(.$site, .$parameter), sep = "-")%>%
+  mutate(user_flag = if_else(final_status == "PASS", NA, user_flag))%>%
+  select(DT_round, DT_join, site, parameter,units, 
+         value_raw = mean_pre_cal, 
+         value_post_cal_corr = mean, 
+         value_post_ver = mean_analysis, 
+         value_post_drift_corr = mean_drift_trans,   
+         auto_qc_flag = auto_flag, mal_flag, 
+         user_qc_flag = user_flag, qc_status = final_status, correction_type)%>%
+  split(f = list(.$site, .$parameter), sep = "-")%>% 
   keep(~ nrow(.x) > 0) #remove any empty datasets
 
-non_drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2022_cycle/in_progress/verified_directory/', pattern = "*.parquet", full.names = TRUE)
+non_drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2022_cycle/in_progress/verified_directory/', pattern = "*.parquet", full.names = TRUE)%>% grep(pattern = "Depth", x = ., ignore.case = TRUE,value = T,invert = T)
 
 non_drift_corrected_data <- map_dfr(non_drift_corrected_files, read_parquet)%>%
-  mutate( mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA))%>%
+  mutate( mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA), 
+          #double check that user flag is consistent with final status
+          user_flag = if_else(final_status == "PASS", NA, user_flag))%>%
   select(DT_round, DT_join, site, parameter,units,
          value_raw = mean_pre_cal, 
          value_post_cal_corr = mean, 
@@ -1081,44 +1232,46 @@ non_drift_corrected_data <- map_dfr(non_drift_corrected_files, read_parquet)%>%
          mal_flag, 
          user_qc_flag = user_flag,
          qc_status = final_status)%>%
+  #adding in the final depth data from above
+  bind_rows(final_depth_data)%>% 
   split(f = list(.$site, .$parameter), sep = "-")
 
 #only keep non drift corrected site parameters if they are not in the drift corrected data (i.e. if they haven't been drift corrected yet)
 all_datasets <- c(non_drift_corrected_data[!names(non_drift_corrected_data) %in% names(drift_corrected_data)], drift_corrected_data)%>%
   keep(~ nrow(.x) > 0) #remove any empty datasets
 
-
 #units lookup table
-
-units_table <- all_datasets%>%
-  bind_rows()%>%
-  select(parameter, units)%>%
-  distinct()%>%
-  filter(!is.na(parameter) & !is.na(units))
+#--------------------------#
+#DOUBLE CHECK IF NEW PARAMETERS ARE ADDED OR UNITS CHANGE
+#--------------------------#
+units_table <- tibble(
+  parameter = c("Chl-a Fluorescence", "Depth", "DO", "ORP", "Specific Conductivity", "Temperature", "FDOM Fluorescence", "Turbidity"),
+  units = c("RFU", "m", "mg/L", "V", "µS/cm", "C", "RFU", "NTU")
+)
 
 raw_dataset <- all_datasets%>%
   bind_rows()%>%
-  #exclude springcreek and boxcreek since they were not verified in 2025
-  filter(!(site %in% c("springcreek", "boxcreek")))%>%
+  mutate(DateTime_UTC = with_tz(DT_round, tzone = "UTC"),
   # if value_post_drift corr is NA, then fill with value_post_ver (this means that the data was verified but not drift corrected, so the post verification value is the most "final" version of the data we have for those instances) This is for parameters other than FDOM and Turbidity
-  mutate(value_post_drift_corr = if_else(is.na(value_post_drift_corr), value_post_ver, value_post_drift_corr),
+  value_post_drift_corr = if_else(is.na(value_post_drift_corr), value_post_ver, value_post_drift_corr),
          #round all values to 3 decimal places for consistency with HydroShare upload
          value_raw = round(value_raw, 3),
          value_post_cal_corr = round(value_post_cal_corr, 3),
          value_post_ver = round(value_post_ver, 3),
          value_post_drift_corr = round(value_post_drift_corr, 3),
-         #Create modifications column to indicate what modifications were made to the data for easier filtering and analysis downstream
-         modifications = case_when( is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
-                                    value_raw == value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "drift correction",
-                                    value_raw != value_post_cal_corr & value_post_ver == value_post_drift_corr ~ "calibration correction",
-                                    value_raw != value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "calibration correction;drift correction",
-                                    TRUE ~ NA), 
-         #convert to UTC
-         DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
+  # Descriptions to the modifications column
+    modifications = case_when(
+      correction_type == "non_resolved" ~ "non-resolved drift",
+      is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
+      value_raw == value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "drift correction",
+      value_raw != value_post_cal_corr & value_post_ver == value_post_drift_corr ~ "calibration correction",
+      value_raw != value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "calibration correction;drift correction",
+      TRUE ~ NA_character_
+     ), 
+    value_post_drift_corr = if_else( !is.na(modifications) & modifications == "non-resolved drift" & parameter != "Chl-a Fluorescence", NA, value_post_drift_corr))%>%
   select(-units)%>%
   left_join(units_table, by = "parameter")%>%
-  select(DateTime_MST = DT_round,
-         DateTime_UTC,
+  select(DateTime_UTC,
          site, parameter, units, 
          #Actual data
          value_raw, 
@@ -1126,7 +1279,11 @@ raw_dataset <- all_datasets%>%
          value_post_ver,
          value_post_drift_corr, 
          #QC Info
-         auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications)
+         auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications)%>%
+  #ensure turbidity is > 0 for value_post_drift_corr, value_post_ver, value_post_cal_corr, and value_raw. If not, set to 0.1
+  mutate(value_post_drift_corr = if_else(parameter == "Turbidity" & value_post_drift_corr <= 0.1, 0.1, value_post_drift_corr),
+         value_post_ver = if_else(parameter == "Turbidity" & value_post_ver <= 0.1, 0.1, value_post_ver),
+         value_post_cal_corr = if_else(parameter == "Turbidity" & value_post_cal_corr <= 0.1, 0.1, value_post_cal_corr))
     
 final_dataset <- raw_dataset %>%
   select(DateTime_UTC, site, parameter, units, value_raw, value_final = value_post_drift_corr,user_qc_flag, modifications)
@@ -1139,9 +1296,67 @@ We will be creating two datasets here:
 - A "raw" dataset that includes all the original data with flags and all "versions" of the data: no manual corrections applied, calibration correction, post verification, and post drift correction. This is for posterity and to have a record of what the original data looked like before and after manual verification/corrections.
 - A "cleaned" dataset that includes only the final value (post drift correction if it exists, post verification if not) and a column indicating what modifications were made to the data (manual exclusion, calibration correction, drift correction, etc). This is the dataset that will be uploaded to HydroShare and used for analysis.
 
-### 8.2) Save Raw Dataset
+### 8.1) Review Final Dataset
 
-### 8.3) Save Cleaned Dataset
+#### All parameters at a site
+
+```{r}
+all_data_plots <- map(unique(final_dataset$site), function(site_name) {
+  
+  final_dataset %>% 
+           filter(site == site_name )%>%
+           #remove turbidity values greater than 1000 NTU since they are likely erroneous and will skew the y-axis
+           filter(!(parameter == "Turbidity" & value_raw > 1000))%>%
+  ggplot(., 
+         aes(x = DateTime_UTC, y = value_final, color = modifications)) +
+    geom_point(aes(y = value_raw, color = modifications),size = 0.5, alpha = 0.1) + # add raw data points for comparison
+    geom_point() +
+    facet_wrap(~parameter, scales = "free_y") +
+    labs(title = site_name,
+         x = "Date",
+         y = "Value",
+         color = "QC Status")
+})%>%
+  set_names(unique(final_dataset$site))
+#Best to run each site individually
+#walk(plots, print)
+clean_data_plots <- map(unique(final_dataset$site), function(site_name) {
+  
+  ggplot(final_dataset %>% 
+           filter(site == site_name & !is.na(value_final))%>%
+           #remove turbidity values greater than 1000 NTU since they are likely erroneous and will skew the y-axis
+           filter(!(parameter == "Turbidity" & value_final > 1000)), 
+         aes(x = DateTime_UTC, y = value_final, color = user_qc_flag)) +
+    geom_point() +
+    facet_wrap(~parameter, scales = "free_y") +
+    labs(title = site_name,
+         x = "Date",
+         y = "Value",
+         color = "QC Flag")
+})%>%
+  set_names(unique(final_dataset$site))
+```
+
+#### One specific site-parameter
+
+```{r}
+additional_site <- final_dataset %>% filter(site == "riverbend" & parameter == "Turbidity")
+
+#Check out a specific parameter for a specific site
+ggplotly(ggplot(final_dataset %>% 
+         filter(site == "cottonwood" & parameter == "Turbidity"), 
+       aes(x = DateTime_UTC, y = value_final, color = modifications)) +
+  #geom_point(aes(y = value_raw),size = 0.5, alpha = 0.1) + # add raw data points for comparison
+  geom_point()+
+    geom_line(data = additional_site, aes(x = DateTime_UTC, y = value_final), color = "black")+
+  facet_wrap(~parameter, scales = "free_y"))
+
+```
+
+
+### 8.2) Save Raw & Cleaned Dataset
+
+For each year we will save a csv and parquet version of each file
 
 ```{r}
 year <- "2022"
@@ -1166,4 +1381,119 @@ raw_file_name_parquet <- here( "data/collated/sensor/hydroshare_pub", year, past
 write_parquet(final_dataset, cleaned_file_name_parquet)
 
 write_parquet(raw_dataset, raw_file_name_parquet)
+```
+
+### 8.4) Save Field Notes Dataset
+
+## Field Notes
+
+Since we transitioned from old field notes to our mWater system, I am taking a couple extra steps to clean up/standardize the field notes for downstream use
+
+```{r}
+
+old_field_notes <- read_excel(here("data","raw","field_notes","sensor_field_notes.xlsx")) %>% 
+  mutate(DT = (paste0(date, " ", start_time_mst))) %>%
+  mutate(DT = ymd_hm(DT) + hours(7)) %>%
+  arrange(DT) %>%
+  mutate(DT_round = round_date(DT, "15 minutes")) %>%
+  mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
+         last_site_visit = with_tz(DT_round, tzone = "UTC"),
+         DT_join = as.character(DT_round),
+         sonde_moved = NA,
+         sonde_employed = case_when(is.na(sensor_deployed) & is.na(sensor_pulled) ~ NA,
+                                    sensor_deployed == "x" ~ 0, 
+                                    sensor_pulled == "x" ~ 1), 
+         site = ifelse(site == "rist", "bellvue", site)) %>%
+  ross.wq.tools::fix_site_names()%>%
+  filter(between(DT_round, ymd("2022-01-01"), ymd("2022-12-31")))%>%
+  rename(DateTime_UTC = DT_round) %>%
+  select(-any_of(c("sensors_cleaned", "wiper_working", "photos_downloaded","DT_join", "cal_report_collected", "sensor_swapped_notes", "end_dt", "last_site_visit", "date","sensor_deployed", "sensor_pulled")))
+
+#mini function to clean up the cals_performed column in the field notes data. This will standardize the values to a consistent format and remove any variations of "none" or NA.
+clean_cals <- function(text) {
+  # 1. Clean NA and "none" variations directly inside the function
+  if (is.na(text) || str_to_lower(str_trim(text)) %in% c("none", "")) {
+    return("None")
+  }
+  
+  cals <- character()
+  
+  # 2. Detect parameters via regex keyword search
+  if (str_detect(text, regex("turb", ignore_case = TRUE)))     cals <- c(cals, "Turbidity")
+  if (str_detect(text, regex("r?do", ignore_case = TRUE)))      cals <- c(cals, "DO")
+  if (str_detect(text, regex("cond", ignore_case = TRUE)))     cals <- c(cals, "Conductivity")
+  if (str_detect(text, regex("\\bph\\b", ignore_case = TRUE))) cals <- c(cals, "pH")
+  if (str_detect(text, regex("orp", ignore_case = TRUE)))      cals <- c(cals, "ORP")
+  if (str_detect(text, regex("level", ignore_case = TRUE)))    cals <- c(cals, "Level")
+  
+  # Return original string if no known keywords match (e.g., custom notes)
+  if (length(cals) == 0) return(text) 
+  
+  # 3. Sort alphabetically and combine into a clean, unified string
+  paste(sort(unique(cals)), collapse = ", ")
+}
+
+sensor_field_notes <- old_field_notes%>%
+    #Clean up crew to just initials and remove any extra text
+  mutate(crew = crew %>%
+    str_replace_all("Other \\(please specify\\)", "Other") %>%
+    str_replace_all("([A-Z])[a-z]+", "\\1") %>%
+    str_replace_all("(?<=[A-Z])\\s+(?=[A-Z])", "")%>%
+    str_replace_all("sam struthers", "SS")%>%
+    str_replace_all("sam", "S")%>%
+    str_replace_all("and", ",")%>% 
+    str_replace_all(" ", "")%>%
+    str_replace_all("_", "")
+  )%>%
+  #replace any character columns that are "NA" or "na" with NA
+  mutate(across(where(is.character), ~ na_if(., "NA")))%>%
+  mutate(across(where(is.character), ~ na_if(., "na")))%>%
+  mutate(cals_performed = map_chr(cals_performed, clean_cals))%>%
+  mutate(ph_junction_replaced = ifelse(str_to_title(ph_junction_replaced) == "No"| is.na(ph_junction_replaced), "No", ph_junction_replaced),
+         rdo_cap_replaced = ifelse(str_to_title(rdo_cap_replaced) == "No" | is.na(rdo_cap_replaced), "No", rdo_cap_replaced))%>%
+   # across(c(ph_junction_replaced,rdo_cap_replaced )), ~ ifelse(str_to_title(.,) == "No", "No", .x))%>%
+    select(any_of(c("site",  "crew","DateTime_UTC", "sonde_employed", "sensors_cleaned", "wiper_working",
+                  "rdo_cap_condition", "rdo_cap_replaced", "ph_junction_replaced", "cals_performed",
+                  "sonde_moved", "sensor malfunction", "visit_type", "start_DT", "visit_comments", 
+                  "rdo_pre_clean",   "rdo_post_clean", "rdo_post_cal",
+                  "cond_pre_clean", "cond_post_clean", "cond_post_cal",
+                  "ph_pre_clean", "ph_post_clean", "ph_post_cal",
+                  "orp_pre_clean", "orp_post_clean", "orp_post_cal",
+                  "turb_pre_clean", "turb_post_clean", "turb_post_cal",
+                  "fdom_pre_clean", "fdom_post_clean", "fdom_post_cal",
+                  "chla_pre_clean", "chla_post_clean", "chla_post_cal")))%>%
+  fix_site_names()
+
+field_notes_file <- here("data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_sensor_field_notes_", year, ".csv"))
+
+write_csv(sensor_field_notes, field_notes_file)
+
+```
+### 8.5) Double Check Location Metadata
+
+Here we will load and double check the location metadata file created by Sam Struthers and verified by Katie Willi
+
+```{r}
+ location_meta <- read_csv("data/collated/sensor/hydroshare_pub/CSU_ROSS_sonde_location_metadata.csv",
+                           show_col_types = FALSE)%>%
+  mutate(data_start_date = as.POSIXct(data_start_date, tz = "UTC", format = "%m/%d/%y"),
+         data_end_date =  if_else( is.na(data_end_date), 
+                                   ymd("2025-11-17"),
+                                   as.POSIXct(data_end_date, tz = "UTC", format = "%m/%d/%y")))%>%
+
+  mutate(min_year = year(data_start_date),
+         max_year = year(data_end_date), 
+          year_range = paste0(min_year, "-", max_year)) 
+
+#update as needed
+#write_csv(location_meta, here("data/collated/sensor/hydroshare_pub/CSU_ROSS_sonde_location_metadata.csv"))
+# 
+# tmap_mode("view")
+# tm_basemap("OpenStreetMap") +
+#   tm_shape(location_meta %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326)) +
+#   #color is SiteID and shape is year_range
+#     tm_symbols(col = "SiteID", shape = "year_range", size = 0.5, border.col = "black")
+# 
+
+
 ```

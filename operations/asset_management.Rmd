@@ -1,0 +1,357 @@
+---
+title: "Sensor & Sonde Asset Management"
+subtitle: "2026 Sensor Tracking — Deployment Status"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+author: "ROSSyndicate - Field Manager"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(stringr)
+library(DT)
+library(plotly)
+library(ggplot2)
+library(here)
+library(openxlsx)
+library(tidyverse)
+
+
+# ---- Path to workbook ----
+# Update this path as needed
+xlsx_path <- here("data/raw/management/equipment_tracking/2026_sensor_tracking.xlsx")
+
+# ---- Update the Workbook based on field notes & cal reports ----
+
+#Load field notes 
+source("src/load_mWater_notes.R")
+all_notes_cleaned <- load_mWater_notes()
+source("src/update_station_info.R")
+# This will update the workbook's `station_info` tab with the most recent sonde SNs and vulink info based on field notes
+update_station_info(field_notes = all_notes_cleaned,
+                    xlsx_path)
+source("src/update_sensor_current_locations.R")
+# This will update the workbook's `sensor_cur_loc` tab with the most recent sensor locations based on calibration reports and field notes
+update_sensor_current_locations(field_notes = all_notes_cleaned,
+                                xlsx_path)
+
+
+ownership   <- read_excel(xlsx_path, sheet = "ownership")
+sensor_loc  <- read_excel(xlsx_path, sheet = "sensor_cur_loc")
+station_info <- read_excel(xlsx_path, sheet = "station_info")
+```
+
+```{r prep}
+# ------------------------------------------------------------------
+# SONDES
+# Sondes are identified as any "Equipment" entry containing "AT"
+# (AT500 / AT600 / AT700 / AT800). Each such row in `ownership` is
+# one physical sonde
+# Deployment status comes from `station_info$current_sonde_sn`,
+# which lists the SN currently installed at each site.
+# ------------------------------------------------------------------
+
+sondes_owned <- ownership %>%
+  filter(is.na(archive))%>%
+  filter(str_detect(Equipment, "AT")) %>%
+  mutate(SN = as.character(SN)) %>%
+  select(Owner, Equipment, SN, date_acquired, notes, lent)
+
+deployed_sonde_sns <- station_info %>%
+  filter(!is.na(current_sonde_sn)) %>%
+  mutate(current_sonde_sn = as.character(current_sonde_sn)) %>%
+  pull(current_sonde_sn)
+
+sondes_owned <- sondes_owned %>%
+  mutate(status = case_when(
+    !is.na(lent) ~ "Lent",
+    SN %in% deployed_sonde_sns ~ "Deployed",
+    TRUE ~ "Available"
+  )) %>%
+  select(-lent)
+
+sonde_summary <- sondes_owned %>%
+  count(Equipment, status) %>%
+  pivot_wider(names_from = status, values_from = n, values_fill = 0) %>%
+  mutate(Total = rowSums(pick(any_of(c("Deployed", "Lent", "Available"))), na.rm = TRUE)) %>%
+  arrange(desc(Total))
+
+sonde_totals <- sondes_owned %>%
+  count(status) %>%
+  pivot_wider(names_from = status, values_from = n, values_fill = 0)
+
+# ------------------------------------------------------------------
+# VULINKS
+# Vulinks are identified as "Equipment" == "vulink" in `ownership`.
+# Deployment status comes from `station_info$current_vulink_sn`,
+# which lists the SN currently installed at each site.
+# ------------------------------------------------------------------
+
+vulinks_owned <- ownership %>%
+  filter(is.na(archive))%>%
+  filter(str_to_lower(Equipment) == "vulink") %>%
+  mutate(SN = as.character(SN)) %>%
+  select(Owner, Equipment, SN, date_acquired, notes, lent)
+
+deployed_vulink_sns <- station_info %>%
+  filter(!is.na(current_vulink_sn)) %>%
+  mutate(current_vulink_sn = as.character(current_vulink_sn)) %>%
+  pull(current_vulink_sn)
+
+vulinks_owned <- vulinks_owned %>%
+  mutate(status = case_when(
+    !is.na(lent) ~ "Lent",
+    SN %in% deployed_vulink_sns ~ "Deployed",
+    TRUE ~ "Available"
+  )) %>%
+  select(-lent)
+
+vulink_summary <- vulinks_owned %>%
+  count(Equipment, status) %>%
+  pivot_wider(names_from = status, values_from = n, values_fill = 0) %>%
+  mutate(Total = rowSums(pick(any_of(c("Deployed", "Lent", "Available"))), na.rm = TRUE)) %>%
+  arrange(desc(Total))
+
+vulink_totals <- vulinks_owned %>%
+  count(status) %>%
+  pivot_wider(names_from = status, values_from = n, values_fill = 0)
+
+# ------------------------------------------------------------------
+# SENSORS
+# `sensor_cur_loc` holds one row per individual sensor  with
+# its current deployed location. This is generated from calibration reports and 
+#`src/update_sensor_current_locations.R` script.
+#`site == "Lab"` means it's not deployed (i.e. available);
+# any other site value means it is deployed.
+# ------------------------------------------------------------------
+
+clean_sensor_name <- function(x) {
+  x <- str_trim(x)
+  case_when(
+    str_to_lower(x) %in% c("turb") ~ "Turbidity",
+    str_to_lower(x) %in% c("ph") ~ "pH/ORP",
+    str_to_lower(x) %in% c("cond") ~ "Conductivity",
+    str_to_lower(x) %in% c("do","rdo") ~ "RDO (DO)",
+    str_to_lower(x) %in% c("rdo_blue") ~ "RDO Blue (DO)",
+    str_to_lower(x) %in% c("chla") ~ "Chlorophyll-a",
+    str_to_lower(x) %in% c("fdom") ~ "FDOM",
+    TRUE ~ x
+  )
+}
+
+sensors <- sensor_loc %>%
+  filter(!is.na(sensor)) %>%
+  mutate(
+    sensor_type = clean_sensor_name(sensor),
+    status = if_else(str_to_lower(site) == "lab", "Available", if_else(str_to_lower(site) == "lent out", "Lent", "Deployed"))
+  )
+
+sensor_summary <- sensors %>%
+  count(sensor_type, status) %>%
+  pivot_wider(names_from = status, values_from = n, values_fill = 0) %>%
+  mutate(Total = rowSums(pick(any_of(c("Deployed", "Lent", "Available"))), na.rm = TRUE))%>%
+  arrange(desc(Total))
+
+sensor_totals <- sensors %>%
+  count(status) %>%
+  pivot_wider(names_from = status, values_from = n, values_fill = 0)
+```
+
+## Overview
+
+This report summarizes current deployment status for **sondes** (multi-parameter
+housings, identified as `Equipment` values containing "AT" — AT500/600/700/800),
+**vulinks** (identified as `Equipment == "vulink"`), and **individual sensors**
+(turbidity, pH, conductivity, DO, chlorophyll-a, FDOM, etc.) based on the
+`ownership`, `sensor_cur_loc`, and `station_info` tabs.
+
+```{r headline-numbers}
+`%||%` <- function(a, b) if (length(a) == 0 || is.na(a)) b else a
+
+sonde_deployed  <- sonde_totals$Deployed %||% 0
+sonde_available <- sonde_totals$Available %||% 0
+sonde_lent      <- sonde_totals$Lent %||% 0
+vulink_deployed  <- vulink_totals$Deployed %||% 0
+vulink_available <- vulink_totals$Available %||% 0
+vulink_lent      <- vulink_totals$Lent %||% 0
+sensor_deployed  <- sensor_totals$Deployed %||% 0
+sensor_available <- sensor_totals$Available %||% 0
+sensor_lent      <- sensor_totals$Lent %||% 0
+
+stat_card <- function(value, label, bg) {
+  htmltools::tags$div(
+    style = paste0("flex:1; min-width:160px; background:", bg, "; color:white; padding:20px; border-radius:8px; text-align:center;"),
+    htmltools::tags$h3(value, style="margin:0; font-size:2.2em;"),
+    htmltools::tags$p(label, style="margin:0;")
+  )
+}
+
+stat_row <- function(...) {
+  htmltools::tags$div(
+    style = "display:flex; gap:20px; flex-wrap:wrap; margin-bottom: 20px;",
+    ...
+  )
+}
+
+htmltools::tagList(
+  stat_row(
+    stat_card(sonde_deployed, "Sondes Deployed", "#2c3e50"),
+    stat_card(sonde_lent, "Sondes on Loan", "#f39c12"),
+    stat_card(sonde_available, "Sondes Available", "#18bc9c")
+  ),
+  stat_row(
+    stat_card(vulink_deployed, "Vulinks Deployed", "#2c3e50"),
+    stat_card(vulink_lent, "Vulinks on Loan", "#f39c12"),
+    stat_card(vulink_available, "Vulinks Available", "#18bc9c")
+  ),
+  stat_row(
+    stat_card(sensor_deployed, "Sensors Deployed", "#2c3e50"),
+    stat_card(sensor_lent, "Sensors on Loan", "#f39c12"),
+    stat_card(sensor_available, "Sensors Available", "#18bc9c")
+  )
+)
+```
+
+---
+
+## Sondes {.tabset}
+
+### Summary Table
+
+```{r sonde-table}
+datatable(
+  sonde_summary,
+  rownames = FALSE,
+  options = list(dom = 't', pageLength = 10),
+  caption = "Sondes by type: deployed vs. available"
+) %>%
+  DT::formatStyle('Available', backgroundColor = DT::styleInterval(0, c('white', '#d4f5ec')))
+```
+
+### All Sondes (detail)
+
+```{r sonde-detail}
+datatable(
+  sondes_owned %>% mutate(date_acquired = as.Date(date_acquired))%>% arrange(Equipment, status),
+  rownames = FALSE,
+  filter = "top",
+  options = list(pageLength = 15),
+  caption = "Every sonde on record, with owner and current status"
+)
+```
+
+---
+
+## Vulinks {.tabset}
+
+### Summary Table
+
+```{r vulink-table}
+datatable(
+  vulink_summary,
+  rownames = FALSE,
+  options = list(dom = 't', pageLength = 10),
+  caption = "Vulinks: deployed vs. available"
+) %>%
+  DT::formatStyle('Available', backgroundColor = DT::styleInterval(0, c('white', '#d4f5ec')))
+```
+
+### All Vulinks (detail)
+
+```{r vulink-detail}
+datatable(
+  vulinks_owned %>% mutate(date_acquired = as.Date(date_acquired)) %>% arrange(status),
+  rownames = FALSE,
+  filter = "top",
+  options = list(pageLength = 15),
+  caption = "Every vulink on record, with owner and current status"
+)
+```
+
+---
+
+## Sensors {.tabset}
+
+### Summary Table
+
+```{r sensor-table}
+datatable(
+  sensor_summary,
+  rownames = FALSE,
+  options = list(dom = 't', pageLength = 10),
+  caption = "Sensors by type: deployed vs. available"
+) %>%
+  DT::formatStyle('Available', backgroundColor = DT::styleInterval(0, c('white', '#d4f5ec')))
+```
+
+### Deployed vs Available (chart)
+
+```{r sensor-chart}
+sensor_long <- sensors %>% count(sensor_type, status)
+
+p2 <- ggplot(sensor_long, aes(x = reorder(sensor_type, -n), y = n, fill = status,
+                               text = paste0(sensor_type, " — ", status, ": ", n))) +
+  geom_col(position = "stack") +
+  scale_fill_manual(values = c("Deployed" = "#2c3e50", "Lent" = "#f39c12","Available" = "#18bc9c")) +
+  labs(x = "Sensor Type", y = "Count", fill = "Status",
+       title = "Sensor Inventory by Type") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ggplotly(p2, tooltip = "text")
+```
+
+
+### All Sensors (detail)
+
+```{r sensor-detail}
+datatable(
+  sensors %>%
+    select(sn, sensor_type, owner, site, status, last_calibrated) %>%
+    mutate(last_calibrated = as.Date(last_calibrated)) %>%
+    arrange(sensor_type, status),
+  rownames = FALSE,
+  filter = "top",
+  options = list(pageLength = 15),
+  caption = "Every sensor on record, with owner, current site, and status"
+)
+```
+
+---
+
+## Notes on methodology
+The majority of this data/report is generated automatically from the `ownership`, `sensor_cur_loc`, and `station_info` tabs of the 2026 Sensor Tracking workbook. The `sensor_cur_loc` tab is generated from calibration reports and field notes using the `src/update_sensor_current_locations.R` script, and the `station_info` tab is updated from field notes using the `src/update_station_info.R` script. **You must ensure that the calibration reports and field notes are up to date in order for this report to be accurate.**
+
+- **Archived** units are excluded entirely: any `ownership` row where `archive`
+  is filled in is dropped before sonde/vulink counts are built, since those
+  units are retired from the active pool.
+- **Lent** units are *not* excluded — they're tracked as their own status so
+  the pool of active-but-currently-unavailable equipment stays visible:
+  - **Sondes/Vulinks**: a row is marked **Lent** if `ownership$lent` is filled
+    in (this check happens before deployed/available, so a lent unit is
+    reported as Lent even if its SN also appears in `station_info`).
+  - **Sensors**: a row is marked **Lent** if `sensor_cur_loc$site` is
+    `"lent out"` (also checked before the deployed/available split).
+- **Sondes**: identified from the `ownership` tab as any row whose `Equipment`
+  value contains "AT" (AT500/AT600/AT700/AT800 sonde bodies). A non-lent,
+  non-archived sonde is marked **Deployed** if its serial number appears in
+  `station_info$current_sonde_sn`, otherwise **Available**.
+- **Vulinks**: identified from the `ownership` tab as any row whose `Equipment`
+  value equals "vulink" (case-insensitive). A non-lent, non-archived vulink is
+  marked **Deployed** if its serial number appears in
+  `station_info$current_vulink_sn`, otherwise **Available**.
+- **Sensors**: taken from `sensor_cur_loc`, one row per physical sensor probe.
+  A sensor is marked **Available** if its `site` is `"Lab"`, **Lent** if its
+  `site` is `"lent out"`, and **Deployed** otherwise. 
+- Rows with missing `sensor`/`Equipment` values are excluded from counts.
+
